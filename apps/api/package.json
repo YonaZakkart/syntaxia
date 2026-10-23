@@ -1,0 +1,20 @@
+{
+  "name": "@syntaxia/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@syntaxia/db": "workspace:*",
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0"
+  }
+}
