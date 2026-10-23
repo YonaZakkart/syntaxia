@@ -13,7 +13,12 @@
     "build": "pnpm -r run build",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "dev:infra": "docker compose up -d",
+    "dev:infra:down": "docker compose down",
+    "db:push": "pnpm --filter @syntaxia/db db:push",
+    "db:studio": "pnpm --filter @syntaxia/db db:studio",
+    "db:generate": "pnpm --filter @syntaxia/db db:generate"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
