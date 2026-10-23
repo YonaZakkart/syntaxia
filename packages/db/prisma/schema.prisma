@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("USER") // USER, ADMIN
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  submissions Submission[]
+}
+
+model Language {
+  id          String   @id @default(uuid())
+  name        String   // e.g., "JavaScript", "Python"
+  version     String   // e.g., "18.x", "3.11"
+  dockerImage String   // e.g., "node:18-alpine", "python:3.11-slim"
+  createdAt   DateTime @default(now())
+  
+  challenges  Challenge[]
+  submissions Submission[]
+}
+
+model Challenge {
+  id            String     @id @default(uuid())
+  title         String
+  description   String     @db.Text
+  difficulty    String     // EASY, MEDIUM, HARD
+  starterCode   String     @db.Text
+  languageId    String
+  language      Language   @relation(fields: [languageId], references: [id])
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  testCases     TestCase[]
+  submissions   Submission[]
+}
+
+model TestCase {
+  id             String    @id @default(uuid())
+  challengeId    String
+  challenge      Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  input          String    @db.Text
+  expectedOutput String    @db.Text
+  isPublic       Boolean   @default(false) // Public for hints, private for final grading
+}
+
+model Submission {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  challengeId String
+  challenge   Challenge   @relation(fields: [challengeId], references: [id])
+  languageId  String
+  language    Language    @relation(fields: [languageId], references: [id])
+  code        String      @db.Text
+  status      String      // PENDING, ACCEPTED, WRONG_ANSWER, COMPILE_ERROR, TIME_LIMIT_EXCEEDED
+  createdAt   DateTime    @default(now())
+}
