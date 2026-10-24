@@ -11,12 +11,15 @@
     "@hono/node-server": "^1.13.7",
     "@syntaxia/db": "workspace:*",
     "bcrypt": "^6.0.0",
+    "bullmq": "^6.4.1",
     "hono": "^4.6.3",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/ioredis": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.0",
     "tsx": "^4.15.0",
