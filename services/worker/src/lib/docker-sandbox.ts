@@ -1,177 +1,195 @@
+import { PassThrough } from 'node:stream';
 import Docker from 'dockerode';
-import tar from 'tar-stream';
 
 const docker = new Docker();
 
-const EXECUTION_TIMEOUT_MS = 5000;
-const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024; // 256MB
-const CPU_LIMIT_NANOS = 1 * 1_000_000_000; // 1 CPU
-
-export interface SandboxResult {
+interface ExecutionResult {
   stdout: string;
   stderr: string;
   exitCode: number;
-  timedOut: boolean;
+  duration: number; // en milisegundos
 }
 
 interface LanguageConfig {
   dockerImage: string;
-  fileName: string;
+  compileCommand?: string;
   runCommand: string;
+  fileExtension: string;
 }
 
-const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
-  JavaScript: {
-    dockerImage: 'node:18-alpine',
-    fileName: 'solution.js',
-    runCommand: 'node',
-  },
-  Python: {
-    dockerImage: 'python:3.11-alpine',
-    fileName: 'solution.py',
-    runCommand: 'python',
-  },
-};
+function getLanguageConfig(
+  languageId: string,
+  dockerImage: string
+): LanguageConfig {
+  const langMap: Record<string, Omit<LanguageConfig, 'dockerImage'>> = {
+    python: {
+      compileCommand: undefined,
+      runCommand: 'python3',
+      fileExtension: '.py',
+    },
+    javascript: {
+      compileCommand: undefined,
+      runCommand: 'node',
+      fileExtension: '.js',
+    },
+    cpp: {
+      compileCommand: 'g++ /tmp/solution.cpp -o /tmp/solution -O2',
+      runCommand: '/tmp/solution',
+      fileExtension: '.cpp',
+    },
+    java: {
+      compileCommand: 'javac /tmp/Solution.java',
+      runCommand: 'java -cp /tmp Solution',
+      fileExtension: '.java',
+    },
+  };
 
-function getLanguageConfig(languageName: string): LanguageConfig {
-  const config = LANGUAGE_CONFIGS[languageName];
+  const config = langMap[languageId.toLowerCase()];
   if (!config) {
-    throw new Error(`Language not supported yet: ${languageName}`);
+    throw new Error(`Unsupported language: ${languageId}`);
   }
-  return config;
+
+  return {
+    dockerImage,
+    ...config,
+  };
 }
 
-function buildTarBuffer(fileName: string, code: string): Promise<Buffer> {
+async function demuxStream(
+  stream: NodeJS.ReadableStream
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const pack = tar.pack();
-    pack.entry({ name: fileName }, code);
-    pack.finalize();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
 
-    const chunks: Buffer[] = [];
-    pack.on('data', (chunk: Buffer) => chunks.push(chunk));
-    pack.on('end', () => resolve(Buffer.concat(chunks)));
-    pack.on('error', reject);
-  });
-}
+    let stdoutData = '';
+    let stderrData = '';
 
-function demuxStream(stream: NodeJS.ReadableStream): {
-  stdout: string;
-  stderr: string;
-} {
-  const stdoutChunks: Buffer[] = [];
-  const stderrChunks: Buffer[] = [];
-
-  return new Promise<any>((resolve) => {
-    stream.on('data', (chunk: Buffer) => {
-      if (chunk.length < 8) {
-        stdoutChunks.push(chunk);
-        return;
-      }
-      const streamType = chunk[0];
-      const payload = chunk.subarray(8);
-      if (streamType === 2) {
-        stderrChunks.push(payload);
-      } else {
-        stdoutChunks.push(payload);
-      }
+    stdout.on('data', (chunk) => {
+      stdoutData += chunk.toString();
     });
+
+    stderr.on('data', (chunk) => {
+      stderrData += chunk.toString();
+    });
+
     stream.on('end', () => {
-      resolve({
-        stdout: Buffer.concat(stdoutChunks).toString('utf-8'),
-        stderr: Buffer.concat(stderrChunks).toString('utf-8'),
-      });
+      resolve({ stdout: stdoutData, stderr: stderrData });
     });
-  }) as any;
-}
 
-async function ensureImageExists(imageName: string): Promise<void> {
-  try {
-    await docker.getImage(imageName).inspect();
-    console.log(`✅ Imagen ${imageName} ya existe localmente`);
-  } catch (error: any) {
-    if (error.statusCode === 404) {
-      console.log(`📥 Descargando imagen ${imageName}...`);
-      const stream = await docker.pull(imageName);
-      await new Promise((resolve, reject) => {
-        docker.modem.followProgress(stream, (err: Error | null) => {
-          if (err) reject(err);
-          else resolve(undefined);
-        });
-      });
-      console.log(`✅ Imagen ${imageName} descargada`);
-    } else {
-      throw error;
-    }
-  }
+    stream.on('error', reject);
+
+    docker.modem.demuxStream(stream, stdout, stderr);
+  });
 }
 
 export async function executeInSandbox(
   code: string,
-  languageName: string
-): Promise<SandboxResult> {
-  const config = getLanguageConfig(languageName);
-  await ensureImageExists(config.dockerImage);
+  languageId: string,
+  dockerImage: string,
+  timeoutMs = 5000,
+  stdinInput?: string
+): Promise<ExecutionResult> {
+  const startTime = Date.now();
+  const langConfig = getLanguageConfig(languageId, dockerImage);
+  const sourceFile = `/tmp/solution${langConfig.fileExtension}`;
+
   let container: Docker.Container | null = null;
 
   try {
     container = await docker.createContainer({
-      Image: config.dockerImage,
-      Cmd: ['sh', '-c', 'sleep 30'],
+      Image: langConfig.dockerImage,
+      Cmd: ['/bin/sh', '-c', 'sleep 3600'],
       HostConfig: {
-        Memory: MEMORY_LIMIT_BYTES,
-        MemorySwap: MEMORY_LIMIT_BYTES,
-        NanoCpus: CPU_LIMIT_NANOS,
+        Memory: 256 * 1024 * 1024,
+        NanoCpus: 1000000000,
         NetworkMode: 'none',
-        AutoRemove: false,
         PidsLimit: 64,
       },
     });
 
     await container.start();
 
-    const tarBuffer = await buildTarBuffer(config.fileName, code);
-    await container.putArchive(tarBuffer, { path: '/tmp' });
-
-    const exec = await container.exec({
-      Cmd: [config.runCommand, `/tmp/${config.fileName}`],
+    const writeCodeExec = await container.exec({
+      Cmd: ['sh', '-c', `cat > ${sourceFile} << 'EOF'\n${code}\nEOF`],
       AttachStdout: true,
       AttachStderr: true,
     });
 
-    const stream = await exec.start({ hijack: true, stdin: false });
+    const writeCodeStream = await writeCodeExec.start({});
+    await demuxStream(writeCodeStream);
 
-    let timedOut = false;
-    const timeoutPromise = new Promise<{ stdout: string; stderr: string }>(
-      (resolve) => {
-        setTimeout(() => {
-          timedOut = true;
-          resolve({ stdout: '', stderr: 'Execution timed out' });
-        }, EXECUTION_TIMEOUT_MS);
+    if (stdinInput !== undefined) {
+      const writeInputExec = await container.exec({
+        Cmd: ['sh', '-c', `cat > /tmp/input.txt << 'EOF'\n${stdinInput}\nEOF`],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const writeInputStream = await writeInputExec.start({});
+      await demuxStream(writeInputStream);
+    }
+
+    if (langConfig.compileCommand) {
+      const compileExec = await container.exec({
+        Cmd: ['sh', '-c', langConfig.compileCommand],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      const compileStream = await compileExec.start({});
+      const compileResult = await demuxStream(compileStream);
+      const compileInspect = await compileExec.inspect();
+
+      if (compileInspect.ExitCode !== 0) {
+        return {
+          stdout: '',
+          stderr: compileResult.stderr,
+          exitCode: compileInspect.ExitCode ?? -1, // <-- CORREGIDO
+          duration: Date.now() - startTime,
+        };
       }
-    );
+    }
 
-    const streamPromise = demuxStream(stream as any);
+    let runCmd: string;
+    if (stdinInput !== undefined) {
+      runCmd = `cat /tmp/input.txt | timeout ${Math.ceil(timeoutMs / 1000)}s ${langConfig.runCommand} ${sourceFile}`;
+    } else {
+      runCmd = `timeout ${Math.ceil(timeoutMs / 1000)}s ${langConfig.runCommand} ${sourceFile}`;
+    }
 
-    const { stdout, stderr } = await Promise.race([
-      streamPromise,
-      timeoutPromise,
-    ]);
+    const runExec = await container.exec({
+      Cmd: ['sh', '-c', runCmd],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
 
-    const inspect = await exec.inspect();
-    const exitCode = inspect.ExitCode ?? -1;
+    const runStream = await runExec.start({});
+    const result = await demuxStream(runStream);
+    const runInspect = await runExec.inspect();
 
-    return { stdout, stderr, exitCode, timedOut };
+    const duration = Date.now() - startTime;
+
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: runInspect.ExitCode ?? -1, // <-- CORREGIDO
+      duration,
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    return {
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+      exitCode: -1,
+      duration,
+    };
   } finally {
     if (container) {
       try {
         await container.stop({ t: 0 });
-      } catch {
-        // Puede que ya esté detenido
-      }
-      try {
         await container.remove({ force: true });
-      } catch {
-        // Puede que ya esté eliminado
+      } catch (cleanupError) {
+        console.error('Error cleaning up container:', cleanupError);
       }
     }
   }
