@@ -19,14 +19,12 @@ const worker = new Worker(
     console.log(`[Job ${job.id}] Procesando submission: ${submissionId}`);
 
     try {
-      // 1. Actualizar estado a RUNNING
       await prisma.submission.update({
         where: { id: submissionId },
         data: { status: 'RUNNING' },
       });
       console.log(`[Job ${job.id}] Estado actualizado a RUNNING`);
 
-      // 2. Obtener contexto completo
       const submission = await prisma.submission.findUnique({
         where: { id: submissionId },
         include: {
@@ -47,28 +45,37 @@ const worker = new Worker(
         `[Job ${job.id}] Contexto obtenido. Lenguaje: ${submission.language.name}, TestCases: ${submission.challenge.testCases.length}`
       );
 
-      // 3. EJECUCIÓN REAL EN DOCKER SANDBOX
       console.log(`[Job ${job.id}] Ejecutando código en Docker sandbox...`);
       const result = await executeInSandbox(
         submission.code,
-        submission.language.name
+        submission.language.name,
+        submission.language.dockerImage
       );
 
       console.log(`[Job ${job.id}] Resultado del sandbox:`, {
         exitCode: result.exitCode,
-        timedOut: result.timedOut,
         stdout: result.stdout.trim(),
         stderr: result.stderr.trim(),
+        duration: result.duration,
       });
 
-      // 4. Determinar estado final (lógica básica por ahora, se refinará en Paso 9)
-      let finalStatus: string;
-      if (result.timedOut) {
+      // Determinar estado final
+      // El comando `timeout` de Linux devuelve exitCode 124 cuando hay timeout
+      let finalStatus:
+        | 'PASSED'
+        | 'WRONG_ANSWER'
+        | 'TIME_LIMIT_EXCEEDED'
+        | 'RUNTIME_ERROR'
+        | 'SYSTEM_ERROR';
+
+      if (result.exitCode === 124) {
         finalStatus = 'TIME_LIMIT_EXCEEDED';
       } else if (result.exitCode !== 0) {
         finalStatus = 'RUNTIME_ERROR';
       } else {
-        finalStatus = 'ACCEPTED'; // Por ahora; en el Paso 9 compararemos con test cases
+        // Por ahora, si no hay error, marcamos como PASSED
+        // En el Paso 9.3 compararemos con test cases
+        finalStatus = 'PASSED';
       }
 
       await prisma.submission.update({
