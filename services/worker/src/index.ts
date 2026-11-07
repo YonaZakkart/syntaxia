@@ -1,7 +1,7 @@
 import { prisma } from '@syntaxia/db';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { executeInSandbox } from './lib/docker-sandbox';
+import { runTests } from './lib/test-runner';
 
 const connection = new IORedis(
   process.env.REDIS_URL || 'redis://localhost:6379',
@@ -19,12 +19,14 @@ const worker = new Worker(
     console.log(`[Job ${job.id}] Procesando submission: ${submissionId}`);
 
     try {
+      // 1. Actualizar estado a RUNNING
       await prisma.submission.update({
         where: { id: submissionId },
         data: { status: 'RUNNING' },
       });
       console.log(`[Job ${job.id}] Estado actualizado a RUNNING`);
 
+      // 2. Obtener contexto completo (submission + challenge + testCases + language)
       const submission = await prisma.submission.findUnique({
         where: { id: submissionId },
         include: {
@@ -45,49 +47,37 @@ const worker = new Worker(
         `[Job ${job.id}] Contexto obtenido. Lenguaje: ${submission.language.name}, TestCases: ${submission.challenge.testCases.length}`
       );
 
-      console.log(`[Job ${job.id}] Ejecutando código en Docker sandbox...`);
-      const result = await executeInSandbox(
-        submission.code,
-        submission.language.name,
-        submission.language.dockerImage
-      );
+      // 3. EJECUCIÓN REAL CON TEST RUNNER
+      console.log(`[Job ${job.id}] Ejecutando Test Runner...`);
 
-      console.log(`[Job ${job.id}] Resultado del sandbox:`, {
-        exitCode: result.exitCode,
-        stdout: result.stdout.trim(),
-        stderr: result.stderr.trim(),
-        duration: result.duration,
+      // Nota: Usamos 'as any' para satisfacer el tipo TestRunnerInput, ya que Prisma
+      // devuelve objetos anidados que coinciden con nuestra interfaz pero el tipado
+      // estricto de Prisma a veces requiere esta pequeña concesión en includes.
+      const testResult = await runTests({
+        submission: submission as any,
       });
 
-      // Determinar estado final
-      // El comando `timeout` de Linux devuelve exitCode 124 cuando hay timeout
-      let finalStatus:
-        | 'PASSED'
-        | 'WRONG_ANSWER'
-        | 'TIME_LIMIT_EXCEEDED'
-        | 'RUNTIME_ERROR'
-        | 'SYSTEM_ERROR';
+      console.log(`[Job ${job.id}] Resultado del Test Runner:`, {
+        finalStatus: testResult.finalStatus,
+        testsPassed: testResult.testsPassed,
+        testsTotal: testResult.testsTotal,
+        errorMessage: testResult.errorMessage,
+        totalDuration: `${testResult.totalDuration}ms`,
+      });
 
-      if (result.exitCode === 124) {
-        finalStatus = 'TIME_LIMIT_EXCEEDED';
-      } else if (result.exitCode !== 0) {
-        finalStatus = 'RUNTIME_ERROR';
-      } else {
-        // Por ahora, si no hay error, marcamos como PASSED
-        // En el Paso 9.3 compararemos con test cases
-        finalStatus = 'PASSED';
-      }
-
+      // 4. Persistir el estado final determinado por el Test Runner
       await prisma.submission.update({
         where: { id: submissionId },
-        data: { status: finalStatus },
+        data: { status: testResult.finalStatus },
       });
 
       console.log(
-        `[Job ${job.id}] ✅ Ejecución completada. Estado: ${finalStatus}`
+        `[Job ${job.id}] ✅ Ejecución completada. Estado final: ${testResult.finalStatus}`
       );
     } catch (error) {
       console.error(`[Job ${job.id}] ❌ Error procesando el job:`, error);
+
+      // En caso de error catastrófico del worker, marcar como SYSTEM_ERROR
       await prisma.submission.update({
         where: { id: submissionId },
         data: { status: 'SYSTEM_ERROR' },
