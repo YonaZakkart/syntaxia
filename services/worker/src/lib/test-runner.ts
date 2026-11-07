@@ -156,14 +156,14 @@ export async function runTests({
 
   if (testsPassed === testCases.length) {
     finalStatus = 'PASSED';
-  } else if (errorMessage === 'TIME_LIMIT_EXCEEDED') {
+  } else if (errorMessage === 'Execution timed out') {
     finalStatus = 'TIME_LIMIT_EXCEEDED';
-  } else if (errorMessage === 'COMPILATION_ERROR') {
-    finalStatus = 'COMPILATION_ERROR';
-  } else if (errorMessage === 'RUNTIME_ERROR') {
-    finalStatus = 'RUNTIME_ERROR';
   } else if (errorMessage === 'Wrong answer') {
     finalStatus = 'WRONG_ANSWER';
+  } else if (testResults[0]?.error === 'COMPILATION_ERROR') {
+    finalStatus = 'COMPILATION_ERROR';
+  } else if (testResults[0]?.error === 'RUNTIME_ERROR') {
+    finalStatus = 'RUNTIME_ERROR';
   } else {
     finalStatus = 'SYSTEM_ERROR';
   }
