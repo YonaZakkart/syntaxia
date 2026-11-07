@@ -65,7 +65,7 @@ app.post('/register', async (c) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json(
-        { success: false, error: 'Invalid input', details: error.errors },
+        { success: false, error: 'Invalid input', details: error.issues },
         400
       );
     }
@@ -121,7 +121,7 @@ app.post('/login', async (c) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json(
-        { success: false, error: 'Invalid input', details: error.errors },
+        { success: false, error: 'Invalid input', details: error.issues },
         400
       );
     }

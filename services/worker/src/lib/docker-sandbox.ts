@@ -1,177 +1,220 @@
+import { PassThrough } from 'node:stream';
 import Docker from 'dockerode';
 import tar from 'tar-stream';
 
 const docker = new Docker();
 
-const EXECUTION_TIMEOUT_MS = 5000;
-const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024; // 256MB
-const CPU_LIMIT_NANOS = 1 * 1_000_000_000; // 1 CPU
+const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024; // 256 MB
+const CPU_LIMIT_NANOS = 1_000_000_000; // 1 CPU
 
-export interface SandboxResult {
+export interface ExecutionResult {
   stdout: string;
   stderr: string;
   exitCode: number;
-  timedOut: boolean;
+  duration: number;
 }
 
 interface LanguageConfig {
-  dockerImage: string;
   fileName: string;
-  runCommand: string;
+  compileCommand?: string;
+  runCommand: string; // full command, source path already included when needed
 }
 
 const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
-  JavaScript: {
-    dockerImage: 'node:18-alpine',
-    fileName: 'solution.js',
-    runCommand: 'node',
-  },
-  Python: {
-    dockerImage: 'python:3.11-alpine',
+  python: {
     fileName: 'solution.py',
-    runCommand: 'python',
+    runCommand: 'python3 /tmp/solution.py',
+  },
+  javascript: {
+    fileName: 'solution.js',
+    runCommand: 'node /tmp/solution.js',
+  },
+  cpp: {
+    fileName: 'solution.cpp',
+    compileCommand: 'g++ -O2 /tmp/solution.cpp -o /tmp/solution',
+    runCommand: '/tmp/solution',
+  },
+  java: {
+    fileName: 'Solution.java',
+    compileCommand: 'javac /tmp/Solution.java',
+    runCommand: 'java -cp /tmp Solution',
   },
 };
 
 function getLanguageConfig(languageName: string): LanguageConfig {
-  const config = LANGUAGE_CONFIGS[languageName];
+  const config = LANGUAGE_CONFIGS[languageName.toLowerCase()];
   if (!config) {
     throw new Error(`Language not supported yet: ${languageName}`);
   }
   return config;
 }
 
-function buildTarBuffer(fileName: string, code: string): Promise<Buffer> {
+/**
+ * Build a tar archive in memory containing a single file.
+ * Using putArchive avoids shell interpolation entirely, so user code
+ * can never break out of the file write (no heredoc delimiter injection).
+ */
+function buildTarBuffer(fileName: string, content: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const pack = tar.pack();
-    pack.entry({ name: fileName }, code);
+    pack.entry({ name: fileName }, content);
     pack.finalize();
 
     const chunks: Buffer[] = [];
-    pack.on('data', (chunk: Buffer) => chunks.push(chunk));
+    pack.on('data', (chunk) => chunks.push(chunk as Buffer));
     pack.on('end', () => resolve(Buffer.concat(chunks)));
     pack.on('error', reject);
   });
 }
 
-function demuxStream(stream: NodeJS.ReadableStream): {
-  stdout: string;
-  stderr: string;
-} {
-  const stdoutChunks: Buffer[] = [];
-  const stderrChunks: Buffer[] = [];
-
-  return new Promise<any>((resolve) => {
-    stream.on('data', (chunk: Buffer) => {
-      if (chunk.length < 8) {
-        stdoutChunks.push(chunk);
-        return;
-      }
-      const streamType = chunk[0];
-      const payload = chunk.subarray(8);
-      if (streamType === 2) {
-        stderrChunks.push(payload);
-      } else {
-        stdoutChunks.push(payload);
-      }
-    });
-    stream.on('end', () => {
-      resolve({
-        stdout: Buffer.concat(stdoutChunks).toString('utf-8'),
-        stderr: Buffer.concat(stderrChunks).toString('utf-8'),
-      });
-    });
-  }) as any;
+async function writeFileToContainer(
+  container: Docker.Container,
+  fileName: string,
+  content: string
+): Promise<void> {
+  const tarBuffer = await buildTarBuffer(fileName, content);
+  await container.putArchive(tarBuffer, { path: '/tmp' });
 }
 
 async function ensureImageExists(imageName: string): Promise<void> {
   try {
     await docker.getImage(imageName).inspect();
-    console.log(`✅ Imagen ${imageName} ya existe localmente`);
-  } catch (error: any) {
-    if (error.statusCode === 404) {
-      console.log(`📥 Descargando imagen ${imageName}...`);
-      const stream = await docker.pull(imageName);
-      await new Promise((resolve, reject) => {
-        docker.modem.followProgress(stream, (err: Error | null) => {
-          if (err) reject(err);
-          else resolve(undefined);
-        });
-      });
-      console.log(`✅ Imagen ${imageName} descargada`);
-    } else {
+  } catch (error) {
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    if (statusCode !== 404) {
       throw error;
     }
+    console.log(`[sandbox] Pulling image ${imageName}...`);
+    const stream = await docker.pull(imageName);
+    await new Promise<void>((resolve, reject) => {
+      docker.modem.followProgress(stream, (err: Error | null) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    console.log(`[sandbox] Image ${imageName} ready`);
   }
+}
+
+async function demuxStream(
+  stream: NodeJS.ReadableStream
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+
+    let stdoutData = '';
+    let stderrData = '';
+
+    stdout.on('data', (chunk) => {
+      stdoutData += chunk.toString();
+    });
+    stderr.on('data', (chunk) => {
+      stderrData += chunk.toString();
+    });
+
+    stream.on('end', () => resolve({ stdout: stdoutData, stderr: stderrData }));
+    stream.on('error', reject);
+
+    docker.modem.demuxStream(stream, stdout, stderr);
+  });
 }
 
 export async function executeInSandbox(
   code: string,
-  languageName: string
-): Promise<SandboxResult> {
+  languageName: string,
+  dockerImage: string,
+  timeoutMs = 5000,
+  stdinInput?: string
+): Promise<ExecutionResult> {
+  const startTime = Date.now();
   const config = getLanguageConfig(languageName);
-  await ensureImageExists(config.dockerImage);
+
   let container: Docker.Container | null = null;
 
   try {
+    await ensureImageExists(dockerImage);
+
     container = await docker.createContainer({
-      Image: config.dockerImage,
-      Cmd: ['sh', '-c', 'sleep 30'],
+      Image: dockerImage,
+      Cmd: ['sh', '-c', 'sleep 3600'],
       HostConfig: {
         Memory: MEMORY_LIMIT_BYTES,
-        MemorySwap: MEMORY_LIMIT_BYTES,
+        MemorySwap: MEMORY_LIMIT_BYTES, // no swap headroom
         NanoCpus: CPU_LIMIT_NANOS,
         NetworkMode: 'none',
-        AutoRemove: false,
         PidsLimit: 64,
+        AutoRemove: false,
       },
     });
 
     await container.start();
 
-    const tarBuffer = await buildTarBuffer(config.fileName, code);
-    await container.putArchive(tarBuffer, { path: '/tmp' });
+    // Write source and input as tar archives: no shell involved.
+    await writeFileToContainer(container, config.fileName, code);
+    if (stdinInput !== undefined) {
+      await writeFileToContainer(container, 'input.txt', stdinInput);
+    }
 
-    const exec = await container.exec({
-      Cmd: [config.runCommand, `/tmp/${config.fileName}`],
+    if (config.compileCommand) {
+      const compileExec = await container.exec({
+        Cmd: ['sh', '-c', config.compileCommand],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const compileStream = await compileExec.start({});
+      const compileResult = await demuxStream(compileStream);
+      const compileInspect = await compileExec.inspect();
+
+      if (compileInspect.ExitCode !== 0) {
+        return {
+          stdout: compileResult.stdout,
+          stderr: compileResult.stderr,
+          exitCode: compileInspect.ExitCode ?? -1,
+          duration: Date.now() - startTime,
+        };
+      }
+    }
+
+    const timeoutSeconds = Math.ceil(timeoutMs / 1000);
+    const redirect = stdinInput !== undefined ? '< /tmp/input.txt' : '';
+    const runCmd =
+      `timeout ${timeoutSeconds}s ${config.runCommand} ${redirect}`.trim();
+
+    const runExec = await container.exec({
+      Cmd: ['sh', '-c', runCmd],
       AttachStdout: true,
       AttachStderr: true,
     });
 
-    const stream = await exec.start({ hijack: true, stdin: false });
+    const runStream = await runExec.start({});
+    const result = await demuxStream(runStream);
+    const runInspect = await runExec.inspect();
 
-    let timedOut = false;
-    const timeoutPromise = new Promise<{ stdout: string; stderr: string }>(
-      (resolve) => {
-        setTimeout(() => {
-          timedOut = true;
-          resolve({ stdout: '', stderr: 'Execution timed out' });
-        }, EXECUTION_TIMEOUT_MS);
-      }
-    );
-
-    const streamPromise = demuxStream(stream as any);
-
-    const { stdout, stderr } = await Promise.race([
-      streamPromise,
-      timeoutPromise,
-    ]);
-
-    const inspect = await exec.inspect();
-    const exitCode = inspect.ExitCode ?? -1;
-
-    return { stdout, stderr, exitCode, timedOut };
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: runInspect.ExitCode ?? -1,
+      duration: Date.now() - startTime,
+    };
+  } catch (error) {
+    return {
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+      exitCode: -1,
+      duration: Date.now() - startTime,
+    };
   } finally {
     if (container) {
       try {
         await container.stop({ t: 0 });
       } catch {
-        // Puede que ya esté detenido
+        // already stopped
       }
       try {
         await container.remove({ force: true });
       } catch {
-        // Puede que ya esté eliminado
+        // already removed
       }
     }
   }

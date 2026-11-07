@@ -1,7 +1,7 @@
 import { prisma } from '@syntaxia/db';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { executeInSandbox } from './lib/docker-sandbox';
+import { runTests } from './lib/test-runner';
 
 const connection = new IORedis(
   process.env.REDIS_URL || 'redis://localhost:6379',
@@ -26,7 +26,7 @@ const worker = new Worker(
       });
       console.log(`[Job ${job.id}] Estado actualizado a RUNNING`);
 
-      // 2. Obtener contexto completo
+      // 2. Obtener contexto completo (submission + challenge + testCases + language)
       const submission = await prisma.submission.findUnique({
         where: { id: submissionId },
         include: {
@@ -47,40 +47,32 @@ const worker = new Worker(
         `[Job ${job.id}] Contexto obtenido. Lenguaje: ${submission.language.name}, TestCases: ${submission.challenge.testCases.length}`
       );
 
-      // 3. EJECUCIÓN REAL EN DOCKER SANDBOX
-      console.log(`[Job ${job.id}] Ejecutando código en Docker sandbox...`);
-      const result = await executeInSandbox(
-        submission.code,
-        submission.language.name
-      );
+      // 3. EJECUCIÓN REAL CON TEST RUNNER
+      console.log(`[Job ${job.id}] Ejecutando Test Runner...`);
 
-      console.log(`[Job ${job.id}] Resultado del sandbox:`, {
-        exitCode: result.exitCode,
-        timedOut: result.timedOut,
-        stdout: result.stdout.trim(),
-        stderr: result.stderr.trim(),
+      const testResult = await runTests({ submission });
+
+      console.log(`[Job ${job.id}] Resultado del Test Runner:`, {
+        finalStatus: testResult.finalStatus,
+        testsPassed: testResult.testsPassed,
+        testsTotal: testResult.testsTotal,
+        errorMessage: testResult.errorMessage,
+        totalDuration: `${testResult.totalDuration}ms`,
       });
 
-      // 4. Determinar estado final (lógica básica por ahora, se refinará en Paso 9)
-      let finalStatus: string;
-      if (result.timedOut) {
-        finalStatus = 'TIME_LIMIT_EXCEEDED';
-      } else if (result.exitCode !== 0) {
-        finalStatus = 'RUNTIME_ERROR';
-      } else {
-        finalStatus = 'ACCEPTED'; // Por ahora; en el Paso 9 compararemos con test cases
-      }
-
+      // 4. Persistir el estado final determinado por el Test Runner
       await prisma.submission.update({
         where: { id: submissionId },
-        data: { status: finalStatus },
+        data: { status: testResult.finalStatus },
       });
 
       console.log(
-        `[Job ${job.id}] ✅ Ejecución completada. Estado: ${finalStatus}`
+        `[Job ${job.id}] ✅ Ejecución completada. Estado final: ${testResult.finalStatus}`
       );
     } catch (error) {
       console.error(`[Job ${job.id}] ❌ Error procesando el job:`, error);
+
+      // En caso de error catastrófico del worker, marcar como SYSTEM_ERROR
       await prisma.submission.update({
         where: { id: submissionId },
         data: { status: 'SYSTEM_ERROR' },
