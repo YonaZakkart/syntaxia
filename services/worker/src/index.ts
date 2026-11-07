@@ -50,12 +50,7 @@ const worker = new Worker(
       // 3. EJECUCIÓN REAL CON TEST RUNNER
       console.log(`[Job ${job.id}] Ejecutando Test Runner...`);
 
-      // Nota: Usamos 'as any' para satisfacer el tipo TestRunnerInput, ya que Prisma
-      // devuelve objetos anidados que coinciden con nuestra interfaz pero el tipado
-      // estricto de Prisma a veces requiere esta pequeña concesión en includes.
-      const testResult = await runTests({
-        submission: submission as any,
-      });
+      const testResult = await runTests({ submission });
 
       console.log(`[Job ${job.id}] Resultado del Test Runner:`, {
         finalStatus: testResult.finalStatus,
