@@ -4,7 +4,17 @@ import { z } from 'zod';
 import { executionQueue } from '../lib/queue';
 import { authMiddleware } from '../middleware/auth';
 
-const app = new Hono();
+type Env = {
+  Variables: {
+    user: {
+      userId: string;
+      email: string;
+      role: string;
+    };
+  };
+};
+
+const app = new Hono<Env>();
 
 const submissionSchema = z.object({
   challengeId: z.string().uuid('Invalid challengeId'),
@@ -14,7 +24,7 @@ const submissionSchema = z.object({
 
 app.post('/', authMiddleware, async (c) => {
   try {
-    const user = c.get('user');
+    const user = c.get('user'); // Ahora TypeScript sabe el tipo correcto
     if (!user) {
       return c.json({ success: false, error: 'Unauthorized' }, 401);
     }
@@ -51,7 +61,7 @@ app.post('/', authMiddleware, async (c) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json(
-        { success: false, error: 'Invalid input', details: error.errors },
+        { success: false, error: 'Invalid input', details: error.issues },
         400
       );
     }
