@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { ExecutionResult } from './docker-sandbox';
+import type { ExecutionResult, SandboxRunOptions } from './docker-sandbox';
 import { type SandboxExecutor, runTests } from './test-runner';
 
 interface Case {
@@ -39,11 +39,11 @@ function buildSubmission(code: string, cases: Case[]) {
 function executorFrom(
   perInput: Record<string, ExecutionResult | Error>
 ): SandboxExecutor {
-  return async (_code, _language, _image, _timeout, stdinInput) => {
-    const fixture = perInput[String(stdinInput)];
+  return async (_code, _language, _image, options) => {
+    const fixture = perInput[String(options?.stdinInput)];
 
     if (!fixture) {
-      throw new Error(`No fixture for input: ${String(stdinInput)}`);
+      throw new Error(`No fixture for input: ${String(options?.stdinInput)}`);
     }
 
     if (fixture instanceof Error) {
@@ -242,6 +242,39 @@ describe('runTests', () => {
     assert.equal(result.finalStatus, 'WRONG_ANSWER');
     assert.equal(calls, 1);
     assert.equal(result.testResults.length, 1);
+  });
+
+  it('forwards the resolved limits to the sandbox', async () => {
+    let seen: SandboxRunOptions | undefined;
+    const executor: SandboxExecutor = async (
+      _code,
+      _language,
+      _image,
+      options
+    ) => {
+      seen = options;
+      return success('ok\n');
+    };
+
+    const result = await runTests(
+      {
+        submission: buildSubmission('code', [
+          { input: 'first', expectedOutput: 'ok' },
+        ]),
+        limits: {
+          timeLimitMs: 15000,
+          memoryLimitMb: 512,
+          outputLimitBytes: 2048,
+        },
+      },
+      executor
+    );
+
+    assert.equal(result.finalStatus, 'PASSED');
+    assert.equal(seen?.timeoutMs, 15000);
+    assert.equal(seen?.memoryLimitBytes, 512 * 1024 * 1024);
+    assert.equal(seen?.outputLimitBytes, 2048);
+    assert.equal(seen?.stdinInput, 'first');
   });
 
   it('reports SYSTEM_ERROR when the challenge has no test cases', async () => {

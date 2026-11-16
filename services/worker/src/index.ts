@@ -2,6 +2,7 @@ import './lib/env';
 import { prisma } from '@syntaxia/db';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
+import { resolveExecutionLimits } from './lib/limits';
 import { runTests } from './lib/test-runner';
 
 const connection = new IORedis(
@@ -57,10 +58,17 @@ const worker = new Worker(
         `[Job ${job.id}] Context loaded. Language: ${submission.language.name}, Test cases: ${submission.challenge.testCases.length}`
       );
 
-      // 3. Execute the test runner
+      // 3. Execute the test runner with the resolved limits
+      const limits = resolveExecutionLimits(
+        submission.challenge,
+        submission.language
+      );
+      console.log(
+        `[Job ${job.id}] Limits: ${limits.timeLimitMs}ms, ${limits.memoryLimitMb}MB, ${limits.outputLimitBytes}B output`
+      );
       console.log(`[Job ${job.id}] Running test runner...`);
 
-      const testResult = await runTests({ submission });
+      const testResult = await runTests({ submission, limits });
 
       console.log(`[Job ${job.id}] Test runner result:`, {
         finalStatus: testResult.finalStatus,
