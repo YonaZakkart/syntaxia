@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { signToken } from '../lib/jwt';
 import { comparePassword, hashPassword } from '../lib/password';
+import { strictRateLimit, loginRateLimit } from '../middleware/rateLimit';
 
 const app = new Hono();
 
@@ -21,7 +22,7 @@ const loginSchema = z.object({
 });
 
 // POST /api/auth/register
-app.post('/register', async (c) => {
+app.post('/register', strictRateLimit, async (c) => {
   try {
     const body = await c.req.json();
     const validated = registerSchema.parse(body);
@@ -86,7 +87,7 @@ app.post('/register', async (c) => {
 });
 
 // POST /api/auth/login
-app.post('/login', async (c) => {
+app.post('/login', loginRateLimit, async (c) => {
   try {
     const body = await c.req.json();
     const validated = loginSchema.parse(body);

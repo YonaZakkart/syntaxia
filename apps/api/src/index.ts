@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
+import { globalRateLimit } from './middleware/rateLimit';
 import authRoute from './routes/auth';
 import challengesRoute from './routes/challenges';
 import submissionsRoute from './routes/submissions';
@@ -13,6 +14,7 @@ const app = new Hono();
 // Global middleware
 app.use('*', logger());
 app.use('*', cors());
+app.use('*', globalRateLimit);
 
 app.onError((error, c) => {
   if (error instanceof HTTPException) {

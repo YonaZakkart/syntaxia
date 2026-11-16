@@ -3,9 +3,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { executionQueue } from '../lib/queue';
 import { authMiddleware } from '../middleware/auth';
+import { submissionRateLimit } from '../middleware/rateLimit';
 import type { AppEnv } from '../types';
 
 const app = new Hono<AppEnv>();
+
+// Apply rate limiting to all submission routes
+app.use('*', submissionRateLimit);
 
 // Zod 4's .uuid() enforces RFC version/variant nibbles, but existing
 // challenge and language ids in the database are not canonical UUIDs.
