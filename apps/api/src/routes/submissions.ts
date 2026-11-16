@@ -110,6 +110,9 @@ app.post('/', authMiddleware, async (c) => {
       201
     );
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      return c.json({ success: false, error: 'Invalid JSON body' }, 400);
+    }
     if (error instanceof z.ZodError) {
       return c.json(
         { success: false, error: 'Invalid input', details: error.issues },

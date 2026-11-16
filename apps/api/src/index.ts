@@ -13,6 +13,13 @@ const app = new Hono();
 app.use('*', logger());
 app.use('*', cors());
 
+app.onError((error, c) => {
+  console.error('Unhandled API error:', error);
+  return c.json({ success: false, error: 'Internal Server Error' }, 500);
+});
+
+app.notFound((c) => c.json({ success: false, error: 'Not Found' }, 404));
+
 // Health check
 app.get('/', (c) => c.json({ message: 'Syntaxia API is running' }));
 
