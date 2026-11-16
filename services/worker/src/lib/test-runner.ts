@@ -179,6 +179,18 @@ export async function runTests(
         break;
       }
 
+      if (result.outputTruncated) {
+        fail(
+          testCase,
+          'RUNTIME_ERROR',
+          actualOutput,
+          testDuration,
+          'Output limit exceeded',
+          'RUNTIME_ERROR'
+        );
+        break;
+      }
+
       if (actualOutput !== expectedOutput) {
         fail(
           testCase,
