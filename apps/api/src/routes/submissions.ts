@@ -3,18 +3,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { executionQueue } from '../lib/queue';
 import { authMiddleware } from '../middleware/auth';
+import type { AppEnv } from '../types';
 
-type Env = {
-  Variables: {
-    user: {
-      userId: string;
-      email: string;
-      role: string;
-    };
-  };
-};
-
-const app = new Hono<Env>();
+const app = new Hono<AppEnv>();
 
 // Zod 4's .uuid() enforces RFC version/variant nibbles, but existing
 // challenge and language ids in the database are not canonical UUIDs.

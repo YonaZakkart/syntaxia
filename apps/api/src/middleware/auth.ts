@@ -1,7 +1,8 @@
 import type { Context, Next } from 'hono';
-import { JwtPayload, verifyToken } from '../lib/jwt';
+import { type JwtPayload, verifyToken } from '../lib/jwt';
+import type { AppEnv } from '../types';
 
-export async function authMiddleware(c: Context, next: Next) {
+export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -13,14 +14,17 @@ export async function authMiddleware(c: Context, next: Next) {
 
   const token = authHeader.substring(7); // Remove 'Bearer '
 
+  let payload: JwtPayload;
   try {
-    const payload = verifyToken(token);
-    c.set('user', payload); // Attach user to context
-    await next();
-  } catch (error) {
+    payload = verifyToken(token);
+  } catch {
     return c.json(
       { success: false, error: 'Unauthorized: Invalid token' },
       401
     );
   }
+
+  c.set('user', payload);
+  // Let downstream errors reach app.onError instead of masking them as 401.
+  await next();
 }
