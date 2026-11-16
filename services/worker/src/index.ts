@@ -11,23 +11,28 @@ const connection = new IORedis(
   }
 );
 
-console.log('Worker iniciado y escuchando la cola "code-execution"...');
+console.log('Worker started, listening on queue "code-execution"...');
 
 const worker = new Worker(
   'code-execution',
   async (job) => {
-    const { submissionId } = job.data as { submissionId: string };
-    console.log(`[Job ${job.id}] Procesando submission: ${submissionId}`);
+    const { submissionId } = job.data as { submissionId?: unknown };
+
+    if (typeof submissionId !== 'string' || submissionId.length === 0) {
+      throw new Error('Invalid job payload: submissionId is required');
+    }
+
+    console.log(`[Job ${job.id}] Processing submission: ${submissionId}`);
 
     try {
-      // 1. Actualizar estado a RUNNING
+      // 1. Mark the submission as RUNNING
       await prisma.submission.update({
         where: { id: submissionId },
         data: { status: 'RUNNING' },
       });
-      console.log(`[Job ${job.id}] Estado actualizado a RUNNING`);
+      console.log(`[Job ${job.id}] Status updated to RUNNING`);
 
-      // 2. Obtener contexto completo (submission + challenge + testCases + language)
+      // 2. Load the full context (submission + challenge + test cases + language)
       const submission = await prisma.submission.findUnique({
         where: { id: submissionId },
         include: {
@@ -41,19 +46,19 @@ const worker = new Worker(
       });
 
       if (!submission) {
-        throw new Error('Submission no encontrada');
+        throw new Error('Submission not found');
       }
 
       console.log(
-        `[Job ${job.id}] Contexto obtenido. Lenguaje: ${submission.language.name}, TestCases: ${submission.challenge.testCases.length}`
+        `[Job ${job.id}] Context loaded. Language: ${submission.language.name}, Test cases: ${submission.challenge.testCases.length}`
       );
 
-      // 3. EJECUCIÓN REAL CON TEST RUNNER
-      console.log(`[Job ${job.id}] Ejecutando Test Runner...`);
+      // 3. Execute the test runner
+      console.log(`[Job ${job.id}] Running test runner...`);
 
       const testResult = await runTests({ submission });
 
-      console.log(`[Job ${job.id}] Resultado del Test Runner:`, {
+      console.log(`[Job ${job.id}] Test runner result:`, {
         finalStatus: testResult.finalStatus,
         testsPassed: testResult.testsPassed,
         testsTotal: testResult.testsTotal,
@@ -61,23 +66,31 @@ const worker = new Worker(
         totalDuration: `${testResult.totalDuration}ms`,
       });
 
-      // 4. Persistir el estado final determinado por el Test Runner
+      // 4. Persist the final status reported by the test runner
       await prisma.submission.update({
         where: { id: submissionId },
         data: { status: testResult.finalStatus },
       });
 
       console.log(
-        `[Job ${job.id}] ✅ Ejecución completada. Estado final: ${testResult.finalStatus}`
+        `[Job ${job.id}] Execution finished. Final status: ${testResult.finalStatus}`
       );
     } catch (error) {
-      console.error(`[Job ${job.id}] ❌ Error procesando el job:`, error);
+      console.error(`[Job ${job.id}] Failed to process job:`, error);
 
-      // En caso de error catastrófico del worker, marcar como SYSTEM_ERROR
-      await prisma.submission.update({
-        where: { id: submissionId },
-        data: { status: 'SYSTEM_ERROR' },
-      });
+      // Do not let the cleanup update mask the original error.
+      await prisma.submission
+        .update({
+          where: { id: submissionId },
+          data: { status: 'SYSTEM_ERROR' },
+        })
+        .catch((updateError) => {
+          console.error(
+            `[Job ${job.id}] Could not mark submission as SYSTEM_ERROR:`,
+            updateError
+          );
+        });
+
       throw error;
     }
   },
@@ -85,12 +98,16 @@ const worker = new Worker(
 );
 
 worker.on('failed', (job, err) => {
-  console.error(`Job ${job?.id} falló:`, err.message);
+  console.error(`Job ${job?.id} failed:`, err.message);
 });
 
-process.on('SIGINT', async () => {
-  console.log('\n⏹️ Cerrando worker...');
+async function shutdown(signal: NodeJS.Signals) {
+  console.log(`\nReceived ${signal}, shutting down worker...`);
   await worker.close();
+  await connection.quit().catch(() => undefined);
   await prisma.$disconnect();
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
