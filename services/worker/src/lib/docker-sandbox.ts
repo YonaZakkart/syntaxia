@@ -6,12 +6,21 @@ const docker = new Docker();
 
 const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024; // 256 MB
 const CPU_LIMIT_NANOS = 1_000_000_000; // 1 CPU
+const COMPILE_TIMEOUT_SECONDS = 10;
+// Cap what the worker keeps in memory; the stream is still drained.
+const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export interface ExecutionResult {
   stdout: string;
   stderr: string;
   exitCode: number;
   duration: number;
+  /** True when the compilation step exited with a non-zero code. */
+  compilationFailed?: boolean;
+  /** True when the sandbox itself failed (Docker, image pull, unsupported language). */
+  systemError?: boolean;
+  /** True when stdout or stderr exceeded MAX_OUTPUT_BYTES and was truncated. */
+  outputTruncated?: boolean;
 }
 
 interface LanguageConfig {
@@ -41,11 +50,29 @@ const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
   },
 };
 
+// Database language names are free-form ("C++", "Node.js", ...), so map
+// common spellings to the configurations above.
+const LANGUAGE_ALIASES: Record<string, string> = {
+  py: 'python',
+  python3: 'python',
+  js: 'javascript',
+  node: 'javascript',
+  nodejs: 'javascript',
+  'node.js': 'javascript',
+  'c++': 'cpp',
+  cplusplus: 'cpp',
+  cxx: 'cpp',
+};
+
 function getLanguageConfig(languageName: string): LanguageConfig {
-  const config = LANGUAGE_CONFIGS[languageName.toLowerCase()];
+  const normalized = languageName.trim().toLowerCase();
+  const key = LANGUAGE_ALIASES[normalized] ?? normalized;
+  const config = LANGUAGE_CONFIGS[key];
+
   if (!config) {
     throw new Error(`Language not supported yet: ${languageName}`);
   }
+
   return config;
 }
 
@@ -96,24 +123,56 @@ async function ensureImageExists(imageName: string): Promise<void> {
   }
 }
 
-async function demuxStream(
-  stream: NodeJS.ReadableStream
-): Promise<{ stdout: string; stderr: string }> {
+async function demuxStream(stream: NodeJS.ReadableStream): Promise<{
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+}> {
   return new Promise((resolve, reject) => {
     const stdout = new PassThrough();
     const stderr = new PassThrough();
 
-    let stdoutData = '';
-    let stderrData = '';
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let truncated = false;
+
+    const collect = (
+      chunk: Buffer | string,
+      chunks: Buffer[],
+      bytes: number
+    ) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const nextBytes = bytes + buffer.length;
+
+      if (nextBytes > MAX_OUTPUT_BYTES) {
+        truncated = true;
+        const remaining = MAX_OUTPUT_BYTES - bytes;
+        if (remaining > 0) {
+          chunks.push(buffer.subarray(0, remaining));
+        }
+      } else {
+        chunks.push(buffer);
+      }
+
+      return nextBytes;
+    };
 
     stdout.on('data', (chunk) => {
-      stdoutData += chunk.toString();
+      stdoutBytes = collect(chunk, stdoutChunks, stdoutBytes);
     });
     stderr.on('data', (chunk) => {
-      stderrData += chunk.toString();
+      stderrBytes = collect(chunk, stderrChunks, stderrBytes);
     });
 
-    stream.on('end', () => resolve({ stdout: stdoutData, stderr: stderrData }));
+    stream.on('end', () =>
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString(),
+        stderr: Buffer.concat(stderrChunks).toString(),
+        truncated,
+      })
+    );
     stream.on('error', reject);
 
     docker.modem.demuxStream(stream, stdout, stderr);
@@ -128,22 +187,26 @@ export async function executeInSandbox(
   stdinInput?: string
 ): Promise<ExecutionResult> {
   const startTime = Date.now();
-  const config = getLanguageConfig(languageName);
 
   let container: Docker.Container | null = null;
 
   try {
+    const config = getLanguageConfig(languageName);
+
     await ensureImageExists(dockerImage);
 
     container = await docker.createContainer({
       Image: dockerImage,
       Cmd: ['sh', '-c', 'sleep 3600'],
+      User: '65534:65534',
       HostConfig: {
         Memory: MEMORY_LIMIT_BYTES,
         MemorySwap: MEMORY_LIMIT_BYTES, // no swap headroom
         NanoCpus: CPU_LIMIT_NANOS,
         NetworkMode: 'none',
         PidsLimit: 64,
+        CapDrop: ['ALL'],
+        SecurityOpt: ['no-new-privileges'],
         AutoRemove: false,
       },
     });
@@ -158,7 +221,11 @@ export async function executeInSandbox(
 
     if (config.compileCommand) {
       const compileExec = await container.exec({
-        Cmd: ['sh', '-c', config.compileCommand],
+        Cmd: [
+          'sh',
+          '-c',
+          `timeout ${COMPILE_TIMEOUT_SECONDS}s ${config.compileCommand}`,
+        ],
         AttachStdout: true,
         AttachStderr: true,
       });
@@ -172,6 +239,8 @@ export async function executeInSandbox(
           stderr: compileResult.stderr,
           exitCode: compileInspect.ExitCode ?? -1,
           duration: Date.now() - startTime,
+          compilationFailed: true,
+          outputTruncated: compileResult.truncated,
         };
       }
     }
@@ -196,6 +265,7 @@ export async function executeInSandbox(
       stderr: result.stderr,
       exitCode: runInspect.ExitCode ?? -1,
       duration: Date.now() - startTime,
+      outputTruncated: result.truncated,
     };
   } catch (error) {
     return {
@@ -203,6 +273,7 @@ export async function executeInSandbox(
       stderr: error instanceof Error ? error.message : String(error),
       exitCode: -1,
       duration: Date.now() - startTime,
+      systemError: true,
     };
   } finally {
     if (container) {

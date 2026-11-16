@@ -5,15 +5,16 @@
   "description": "AI-powered coding practice platform and online judge.",
   "license": "MIT",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=20.12.0",
     "pnpm": ">=8.0.0"
   },
   "scripts": {
-    "dev": "pnpm -r run dev",
-    "dev:worker": "pnpm --filter @syntaxia/worker dev",
+    "dev": "pnpm --filter @syntaxia/db build && pnpm -r run dev",
+    "dev:worker": "pnpm --filter @syntaxia/db build && pnpm --filter @syntaxia/worker dev",
     "build": "pnpm -r run build",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "test": "pnpm -r --if-present run test",
     "format": "biome format --write .",
     "dev:infra": "docker compose up -d",
     "dev:infra:down": "docker compose down",
