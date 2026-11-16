@@ -12,6 +12,10 @@ export interface ExecutionResult {
   stderr: string;
   exitCode: number;
   duration: number;
+  /** True when the compilation step exited with a non-zero code. */
+  compilationFailed?: boolean;
+  /** True when the sandbox itself failed (Docker, image pull, unsupported language). */
+  systemError?: boolean;
 }
 
 interface LanguageConfig {
@@ -128,11 +132,12 @@ export async function executeInSandbox(
   stdinInput?: string
 ): Promise<ExecutionResult> {
   const startTime = Date.now();
-  const config = getLanguageConfig(languageName);
 
   let container: Docker.Container | null = null;
 
   try {
+    const config = getLanguageConfig(languageName);
+
     await ensureImageExists(dockerImage);
 
     container = await docker.createContainer({
@@ -172,6 +177,7 @@ export async function executeInSandbox(
           stderr: compileResult.stderr,
           exitCode: compileInspect.ExitCode ?? -1,
           duration: Date.now() - startTime,
+          compilationFailed: true,
         };
       }
     }
@@ -203,6 +209,7 @@ export async function executeInSandbox(
       stderr: error instanceof Error ? error.message : String(error),
       exitCode: -1,
       duration: Date.now() - startTime,
+      systemError: true,
     };
   } finally {
     if (container) {

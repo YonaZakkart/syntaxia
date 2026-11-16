@@ -1,5 +1,13 @@
 import type { Language, Submission, TestCase } from '@syntaxia/db';
-import { executeInSandbox } from './docker-sandbox';
+import { type ExecutionResult, executeInSandbox } from './docker-sandbox';
+
+export type SandboxExecutor = (
+  code: string,
+  languageName: string,
+  dockerImage: string,
+  timeoutMs?: number,
+  stdinInput?: string
+) => Promise<ExecutionResult>;
 
 interface TestRunnerInput {
   submission: Submission & {
@@ -10,7 +18,7 @@ interface TestRunnerInput {
   };
 }
 
-interface TestResult {
+export interface TestResult {
   testCaseId: string;
   passed: boolean;
   expectedOutput: string;
@@ -19,14 +27,17 @@ interface TestResult {
   duration: number;
 }
 
-interface TestRunnerResult {
-  finalStatus:
-    | 'PASSED'
-    | 'WRONG_ANSWER'
-    | 'TIME_LIMIT_EXCEEDED'
-    | 'RUNTIME_ERROR'
-    | 'COMPILATION_ERROR'
-    | 'SYSTEM_ERROR';
+export type TestRunnerStatus =
+  | 'PASSED'
+  | 'WRONG_ANSWER'
+  | 'TIME_LIMIT_EXCEEDED'
+  | 'MEMORY_LIMIT_EXCEEDED'
+  | 'RUNTIME_ERROR'
+  | 'COMPILATION_ERROR'
+  | 'SYSTEM_ERROR';
+
+export interface TestRunnerResult {
+  finalStatus: TestRunnerStatus;
   testsPassed: number;
   testsTotal: number;
   failedTestCaseId?: string;
@@ -35,9 +46,21 @@ interface TestRunnerResult {
   testResults: TestResult[];
 }
 
-export async function runTests({
-  submission,
-}: TestRunnerInput): Promise<TestRunnerResult> {
+const TEST_TIMEOUT_MS = 5000;
+
+// The `timeout` command exits with 124 when it kills the child process.
+const TIMEOUT_EXIT_CODE = 124;
+// 128 + SIGKILL (9), typically the OOM killer inside the container.
+const SIGKILL_EXIT_CODE = 137;
+
+function normalizeOutput(output: string): string {
+  return output.replace(/\r\n/g, '\n').trim();
+}
+
+export async function runTests(
+  { submission }: TestRunnerInput,
+  execute: SandboxExecutor = executeInSandbox
+): Promise<TestRunnerResult> {
   const { code, language, challenge } = submission;
   const testCases = challenge.testCases;
 
@@ -57,74 +80,116 @@ export async function runTests({
   let testsPassed = 0;
   let failedTestCaseId: string | undefined;
   let errorMessage: string | undefined;
+  let failureStatus: TestRunnerStatus | undefined;
 
-  // Ejecutar cada test case
+  const fail = (
+    testCase: TestCase,
+    status: TestRunnerStatus,
+    actualOutput: string,
+    duration: number,
+    message: string,
+    error?: string
+  ) => {
+    testResults.push({
+      testCaseId: testCase.id,
+      passed: false,
+      expectedOutput: normalizeOutput(testCase.expectedOutput),
+      actualOutput,
+      error,
+      duration,
+    });
+    failedTestCaseId = testCase.id;
+    errorMessage = message;
+    failureStatus = status;
+  };
+
   for (const testCase of testCases) {
     const testStartTime = Date.now();
 
     try {
-      const result = await executeInSandbox(
+      const result = await execute(
         code,
         language.name,
         language.dockerImage,
-        5000, // 5 segundos timeout por test
+        TEST_TIMEOUT_MS,
         testCase.input
       );
 
       const testDuration = Date.now() - testStartTime;
-      const actualOutput = result.stdout.trim();
-      const expectedOutput = testCase.expectedOutput.trim();
+      const actualOutput = normalizeOutput(result.stdout);
+      const expectedOutput = normalizeOutput(testCase.expectedOutput);
 
-      // Detectar tipo de error
-      if (result.exitCode === 124) {
-        // Timeout (exit code `timeout` de Linux)
-        testResults.push({
-          testCaseId: testCase.id,
-          passed: false,
-          expectedOutput,
+      if (result.systemError) {
+        fail(
+          testCase,
+          'SYSTEM_ERROR',
           actualOutput,
-          error: 'TIME_LIMIT_EXCEEDED',
-          duration: testDuration,
-        });
-        failedTestCaseId = testCase.id;
-        errorMessage = 'Execution timed out';
-        break; // Detener ejecución en primer timeout
+          testDuration,
+          result.stderr || 'Sandbox execution failed',
+          'SYSTEM_ERROR'
+        );
+        break;
+      }
+
+      if (result.compilationFailed) {
+        fail(
+          testCase,
+          'COMPILATION_ERROR',
+          actualOutput,
+          testDuration,
+          result.stderr || 'Compilation failed',
+          'COMPILATION_ERROR'
+        );
+        break;
+      }
+
+      if (result.exitCode === TIMEOUT_EXIT_CODE) {
+        fail(
+          testCase,
+          'TIME_LIMIT_EXCEEDED',
+          actualOutput,
+          testDuration,
+          'Execution timed out',
+          'TIME_LIMIT_EXCEEDED'
+        );
+        break;
+      }
+
+      if (result.exitCode === SIGKILL_EXIT_CODE) {
+        fail(
+          testCase,
+          'MEMORY_LIMIT_EXCEEDED',
+          actualOutput,
+          testDuration,
+          'Memory limit exceeded',
+          'MEMORY_LIMIT_EXCEEDED'
+        );
+        break;
       }
 
       if (result.exitCode !== 0) {
-        // Error de compilación o runtime
-        const errorType = result.stderr.toLowerCase().includes('error')
-          ? 'COMPILATION_ERROR'
-          : 'RUNTIME_ERROR';
-
-        testResults.push({
-          testCaseId: testCase.id,
-          passed: false,
-          expectedOutput,
+        fail(
+          testCase,
+          'RUNTIME_ERROR',
           actualOutput,
-          error: errorType,
-          duration: testDuration,
-        });
-        failedTestCaseId = testCase.id;
-        errorMessage = result.stderr || 'Execution failed';
-        break; // Detener ejecución en primer error
+          testDuration,
+          result.stderr || 'Execution failed',
+          'RUNTIME_ERROR'
+        );
+        break;
       }
 
       if (actualOutput !== expectedOutput) {
-        // Output incorrecto
-        testResults.push({
-          testCaseId: testCase.id,
-          passed: false,
-          expectedOutput,
+        fail(
+          testCase,
+          'WRONG_ANSWER',
           actualOutput,
-          duration: testDuration,
-        });
-        failedTestCaseId = testCase.id;
-        errorMessage = 'Wrong answer';
-        break; // Detener ejecución en primer test fallido
+          testDuration,
+          'Wrong answer'
+        );
+        break;
       }
 
-      // Si llegamos aquí, el test pasó
       testsPassed++;
       testResults.push({
         testCaseId: testCase.id,
@@ -134,47 +199,27 @@ export async function runTests({
         duration: testDuration,
       });
     } catch (error) {
-      const testDuration = Date.now() - testStartTime;
-      testResults.push({
-        testCaseId: testCase.id,
-        passed: false,
-        expectedOutput: testCase.expectedOutput.trim(),
-        actualOutput: '',
-        error: 'SYSTEM_ERROR',
-        duration: testDuration,
-      });
-      failedTestCaseId = testCase.id;
-      errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      fail(
+        testCase,
+        'SYSTEM_ERROR',
+        '',
+        Date.now() - testStartTime,
+        error instanceof Error ? error.message : 'Unknown error',
+        'SYSTEM_ERROR'
+      );
       break;
     }
   }
 
-  const totalDuration = Date.now() - startTime;
-
-  // Determinar estado final
-  let finalStatus: TestRunnerResult['finalStatus'];
-
-  if (testsPassed === testCases.length) {
-    finalStatus = 'PASSED';
-  } else if (errorMessage === 'Execution timed out') {
-    finalStatus = 'TIME_LIMIT_EXCEEDED';
-  } else if (errorMessage === 'Wrong answer') {
-    finalStatus = 'WRONG_ANSWER';
-  } else if (testResults[0]?.error === 'COMPILATION_ERROR') {
-    finalStatus = 'COMPILATION_ERROR';
-  } else if (testResults[0]?.error === 'RUNTIME_ERROR') {
-    finalStatus = 'RUNTIME_ERROR';
-  } else {
-    finalStatus = 'SYSTEM_ERROR';
-  }
-
   return {
-    finalStatus,
+    finalStatus:
+      failureStatus ??
+      (testsPassed === testCases.length ? 'PASSED' : 'SYSTEM_ERROR'),
     testsPassed,
     testsTotal: testCases.length,
     failedTestCaseId,
     errorMessage,
-    totalDuration,
+    totalDuration: Date.now() - startTime,
     testResults,
   };
 }
