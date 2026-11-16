@@ -1,5 +1,5 @@
 import './lib/env';
-import { prisma } from '@syntaxia/db';
+import { Prisma, prisma } from '@syntaxia/db';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { resolveExecutionLimits } from './lib/limits';
@@ -78,11 +78,33 @@ const worker = new Worker(
         totalDuration: `${testResult.totalDuration}ms`,
       });
 
-      // 4. Persist the final status reported by the test runner
-      await prisma.submission.update({
-        where: { id: submissionId },
-        data: { status: testResult.finalStatus },
-      });
+      // 4. Persist the final status and the detailed execution result
+      await prisma.$transaction([
+        prisma.submission.update({
+          where: { id: submissionId },
+          data: { status: testResult.finalStatus },
+        }),
+        prisma.execution.upsert({
+          where: { submissionId },
+          create: {
+            submissionId,
+            testsPassed: testResult.testsPassed,
+            testsTotal: testResult.testsTotal,
+            totalDurationMs: testResult.totalDuration,
+            testResults: testResult.testResults as unknown as Prisma.InputJsonValue,
+            failedTestCaseId: testResult.failedTestCaseId,
+            errorMessage: testResult.errorMessage,
+          },
+          update: {
+            testsPassed: testResult.testsPassed,
+            testsTotal: testResult.testsTotal,
+            totalDurationMs: testResult.totalDuration,
+            testResults: testResult.testResults as unknown as Prisma.InputJsonValue,
+            failedTestCaseId: testResult.failedTestCaseId,
+            errorMessage: testResult.errorMessage,
+          },
+        }),
+      ]);
 
       console.log(
         `[Job ${job.id}] Execution finished. Final status: ${testResult.finalStatus}`
