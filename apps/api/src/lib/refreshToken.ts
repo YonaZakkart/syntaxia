@@ -1,6 +1,6 @@
 import { Prisma, prisma } from '@syntaxia/db';
-import { hashPassword, comparePassword } from './password';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from './jwt';
+import { comparePassword, hashPassword } from './password';
 
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 
@@ -9,7 +9,9 @@ export interface RefreshTokenResult {
   expiresAt: Date;
 }
 
-export async function createRefreshToken(userId: string): Promise<RefreshTokenResult> {
+export async function createRefreshToken(
+  userId: string
+): Promise<RefreshTokenResult> {
   const tokenId = crypto.randomUUID();
   const refreshToken = signRefreshToken(
     { userId, email: '', role: '' },
@@ -55,24 +57,30 @@ export async function validateRefreshToken(
 }
 
 export async function revokeRefreshToken(tokenHash: string): Promise<void> {
-  await prisma.refreshToken.update({
-    where: { tokenHash },
-    data: { revokedAt: new Date() },
-  }).catch(() => {
-    // Token might not exist or already revoked
-  });
+  await prisma.refreshToken
+    .update({
+      where: { tokenHash },
+      data: { revokedAt: new Date() },
+    })
+    .catch(() => {
+      // Token might not exist or already revoked
+    });
 }
 
-export async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
+export async function revokeAllUserRefreshTokens(
+  userId: string
+): Promise<void> {
   await prisma.refreshToken.updateMany({
     where: { userId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
 }
 
-export async function rotateRefreshToken(
-  oldRefreshToken: string
-): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date } | null> {
+export async function rotateRefreshToken(oldRefreshToken: string): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: Date;
+} | null> {
   const validated = await validateRefreshToken(oldRefreshToken);
 
   if (!validated) {

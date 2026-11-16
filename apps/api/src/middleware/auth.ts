@@ -7,7 +7,11 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return c.json(
-      { success: false, error: 'Unauthorized: No token provided', code: 'NO_TOKEN' },
+      {
+        success: false,
+        error: 'Unauthorized: No token provided',
+        code: 'NO_TOKEN',
+      },
       401
     );
   }
@@ -22,7 +26,11 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     // Check if it's a token expiration error
     if (error instanceof Error && error.name === 'TokenExpiredError') {
       return c.json(
-        { success: false, error: 'Access token expired', code: 'TOKEN_EXPIRED' },
+        {
+          success: false,
+          error: 'Access token expired',
+          code: 'TOKEN_EXPIRED',
+        },
         401
       );
     }
@@ -31,7 +39,11 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       payload = verifyToken(token);
     } catch {
       return c.json(
-        { success: false, error: 'Unauthorized: Invalid token', code: 'INVALID_TOKEN' },
+        {
+          success: false,
+          error: 'Unauthorized: Invalid token',
+          code: 'INVALID_TOKEN',
+        },
         401
       );
     }

@@ -1,6 +1,6 @@
 import { getConnInfo } from '@hono/node-server/conninfo';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import IORedis from 'ioredis';
-import type { Context, Next, MiddlewareHandler } from 'hono';
 
 const redis = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -42,16 +42,12 @@ function createRateLimiter(options: RateLimitOptions): MiddlewareHandler {
     const totalHits = (results?.[2]?.[1] as number) ?? 0;
 
     if (totalHits > limit) {
-      return c.json(
-        { success: false, error: 'Too Many Requests' },
-        429,
-        {
-          'Retry-After': String(windowSec),
-          'X-RateLimit-Limit': String(limit),
-          'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset': String(Math.ceil((now + windowMs) / 1000)),
-        }
-      );
+      return c.json({ success: false, error: 'Too Many Requests' }, 429, {
+        'Retry-After': String(windowSec),
+        'X-RateLimit-Limit': String(limit),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(Math.ceil((now + windowMs) / 1000)),
+      });
     }
 
     // Add rate limit headers to successful responses

@@ -78,7 +78,11 @@ app.get('/', authMiddleware, async (c) => {
 
     if (!parsed.success) {
       return c.json(
-        { success: false, error: 'Invalid input', details: parsed.error.issues },
+        {
+          success: false,
+          error: 'Invalid input',
+          details: parsed.error.issues,
+        },
         400
       );
     }

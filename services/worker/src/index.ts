@@ -1,5 +1,5 @@
 import './lib/env';
-import { Prisma, prisma } from '@syntaxia/db';
+import { type Prisma, prisma } from '@syntaxia/db';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { resolveExecutionLimits } from './lib/limits';
@@ -91,7 +91,8 @@ const worker = new Worker(
             testsPassed: testResult.testsPassed,
             testsTotal: testResult.testsTotal,
             totalDurationMs: testResult.totalDuration,
-            testResults: testResult.testResults as unknown as Prisma.InputJsonValue,
+            testResults:
+              testResult.testResults as unknown as Prisma.InputJsonValue,
             failedTestCaseId: testResult.failedTestCaseId,
             errorMessage: testResult.errorMessage,
           },
@@ -99,7 +100,8 @@ const worker = new Worker(
             testsPassed: testResult.testsPassed,
             testsTotal: testResult.testsTotal,
             totalDurationMs: testResult.totalDuration,
-            testResults: testResult.testResults as unknown as Prisma.InputJsonValue,
+            testResults:
+              testResult.testResults as unknown as Prisma.InputJsonValue,
             failedTestCaseId: testResult.failedTestCaseId,
             errorMessage: testResult.errorMessage,
           },

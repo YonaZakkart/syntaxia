@@ -1,19 +1,23 @@
 import { Prisma, prisma } from '@syntaxia/db';
 import { Hono } from 'hono';
-import { z } from 'zod';
-import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
-import { signAccessToken, signRefreshToken, verifyAccessToken } from '../lib/jwt';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { z } from 'zod';
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyAccessToken,
+} from '../lib/jwt';
 import { comparePassword, hashPassword } from '../lib/password';
 import {
   createRefreshToken,
-  validateRefreshToken,
-  revokeRefreshToken,
-  revokeAllUserRefreshTokens,
   detectReusedRefreshToken,
+  revokeAllUserRefreshTokens,
+  revokeRefreshToken,
+  validateRefreshToken,
 } from '../lib/refreshToken';
-import { strictRateLimit, loginRateLimit } from '../middleware/rateLimit';
 import { authMiddleware } from '../middleware/auth';
+import { loginRateLimit, strictRateLimit } from '../middleware/rateLimit';
 
 const app = new Hono();
 
@@ -36,7 +40,11 @@ const refreshSchema = z.object({
 });
 
 // Helper to set refresh token cookie
-function setRefreshTokenCookie(c: Context, refreshToken: string, expiresAt: Date) {
+function setRefreshTokenCookie(
+  c: Context,
+  refreshToken: string,
+  expiresAt: Date
+) {
   setCookie(c, 'refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -189,13 +197,11 @@ app.post('/login', loginRateLimit, async (c) => {
 app.post('/refresh', strictRateLimit, async (c) => {
   try {
     // Get refresh token from cookie or body
-    const refreshToken = getCookie(c, 'refreshToken') || (await c.req.json()).refreshToken;
+    const refreshToken =
+      getCookie(c, 'refreshToken') || (await c.req.json()).refreshToken;
 
     if (!refreshToken) {
-      return c.json(
-        { success: false, error: 'Refresh token required' },
-        401
-      );
+      return c.json({ success: false, error: 'Refresh token required' }, 401);
     }
 
     // Check for token reuse (security feature)
@@ -203,9 +209,9 @@ app.post('/refresh', strictRateLimit, async (c) => {
     if (isReused) {
       // Token was already used - possible token theft
       // Revoke all user's tokens for safety
-      const decoded = await import('../lib/jwt').then((m) =>
-        m.verifyRefreshToken(refreshToken)
-      ).catch(() => null);
+      const decoded = await import('../lib/jwt')
+        .then((m) => m.verifyRefreshToken(refreshToken))
+        .catch(() => null);
       if (decoded?.userId) {
         await revokeAllUserRefreshTokens(decoded.userId);
       }
@@ -262,7 +268,10 @@ app.post('/logout', authMiddleware, async (c) => {
 
     clearRefreshTokenCookie(c);
 
-    return c.json({ success: true, data: { message: 'Logged out successfully' } });
+    return c.json({
+      success: true,
+      data: { message: 'Logged out successfully' },
+    });
   } catch (error) {
     console.error('Error logging out:', error);
     return c.json({ success: false, error: 'Internal Server Error' }, 500);
