@@ -50,11 +50,29 @@ const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
   },
 };
 
+// Database language names are free-form ("C++", "Node.js", ...), so map
+// common spellings to the configurations above.
+const LANGUAGE_ALIASES: Record<string, string> = {
+  py: 'python',
+  python3: 'python',
+  js: 'javascript',
+  node: 'javascript',
+  nodejs: 'javascript',
+  'node.js': 'javascript',
+  'c++': 'cpp',
+  cplusplus: 'cpp',
+  cxx: 'cpp',
+};
+
 function getLanguageConfig(languageName: string): LanguageConfig {
-  const config = LANGUAGE_CONFIGS[languageName.toLowerCase()];
+  const normalized = languageName.trim().toLowerCase();
+  const key = LANGUAGE_ALIASES[normalized] ?? normalized;
+  const config = LANGUAGE_CONFIGS[key];
+
   if (!config) {
     throw new Error(`Language not supported yet: ${languageName}`);
   }
+
   return config;
 }
 
