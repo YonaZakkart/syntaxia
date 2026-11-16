@@ -123,7 +123,10 @@ async function ensureImageExists(imageName: string): Promise<void> {
   }
 }
 
-async function demuxStream(stream: NodeJS.ReadableStream): Promise<{
+async function demuxStream(
+  stream: NodeJS.ReadableStream,
+  outputLimitBytes: number
+): Promise<{
   stdout: string;
   stderr: string;
   truncated: boolean;
@@ -146,9 +149,9 @@ async function demuxStream(stream: NodeJS.ReadableStream): Promise<{
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       const nextBytes = bytes + buffer.length;
 
-      if (nextBytes > MAX_OUTPUT_BYTES) {
+      if (nextBytes > outputLimitBytes) {
         truncated = true;
-        const remaining = MAX_OUTPUT_BYTES - bytes;
+        const remaining = outputLimitBytes - bytes;
         if (remaining > 0) {
           chunks.push(buffer.subarray(0, remaining));
         }
@@ -179,14 +182,30 @@ async function demuxStream(stream: NodeJS.ReadableStream): Promise<{
   });
 }
 
+export interface SandboxRunOptions {
+  /** Wall-clock limit for the run step. */
+  timeoutMs?: number;
+  /** Data written to input.txt and piped to stdin. */
+  stdinInput?: string;
+  /** Container memory limit in bytes. */
+  memoryLimitBytes?: number;
+  /** Maximum bytes captured per output stream. */
+  outputLimitBytes?: number;
+}
+
 export async function executeInSandbox(
   code: string,
   languageName: string,
   dockerImage: string,
-  timeoutMs = 5000,
-  stdinInput?: string
+  options: SandboxRunOptions = {}
 ): Promise<ExecutionResult> {
   const startTime = Date.now();
+  const {
+    timeoutMs = 5000,
+    stdinInput,
+    memoryLimitBytes = MEMORY_LIMIT_BYTES,
+    outputLimitBytes = MAX_OUTPUT_BYTES,
+  } = options;
 
   let container: Docker.Container | null = null;
 
@@ -200,8 +219,8 @@ export async function executeInSandbox(
       Cmd: ['sh', '-c', 'sleep 3600'],
       User: '65534:65534',
       HostConfig: {
-        Memory: MEMORY_LIMIT_BYTES,
-        MemorySwap: MEMORY_LIMIT_BYTES, // no swap headroom
+        Memory: memoryLimitBytes,
+        MemorySwap: memoryLimitBytes, // no swap headroom
         NanoCpus: CPU_LIMIT_NANOS,
         NetworkMode: 'none',
         PidsLimit: 64,
@@ -230,7 +249,7 @@ export async function executeInSandbox(
         AttachStderr: true,
       });
       const compileStream = await compileExec.start({});
-      const compileResult = await demuxStream(compileStream);
+      const compileResult = await demuxStream(compileStream, outputLimitBytes);
       const compileInspect = await compileExec.inspect();
 
       if (compileInspect.ExitCode !== 0) {
@@ -257,7 +276,7 @@ export async function executeInSandbox(
     });
 
     const runStream = await runExec.start({});
-    const result = await demuxStream(runStream);
+    const result = await demuxStream(runStream, outputLimitBytes);
     const runInspect = await runExec.inspect();
 
     return {

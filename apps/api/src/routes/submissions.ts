@@ -3,9 +3,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { executionQueue } from '../lib/queue';
 import { authMiddleware } from '../middleware/auth';
+import { submissionRateLimit } from '../middleware/rateLimit';
 import type { AppEnv } from '../types';
 
 const app = new Hono<AppEnv>();
+
+// Apply rate limiting to all submission routes
+app.use('*', submissionRateLimit);
 
 // Zod 4's .uuid() enforces RFC version/variant nibbles, but existing
 // challenge and language ids in the database are not canonical UUIDs.
@@ -21,6 +25,157 @@ const submissionSchema = z.object({
   challengeId: idSchema,
   languageId: idSchema,
   code: z.string().min(1, 'Code cannot be empty'),
+});
+
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+interface StoredTestResult {
+  testCaseId?: string;
+  passed?: boolean;
+  expectedOutput?: string;
+  actualOutput?: string;
+  error?: string;
+  duration?: number;
+}
+
+/**
+ * Hidden test cases must not leak their expected/actual output through the
+ * submission detail endpoint. Keep the failure metadata, drop the payloads.
+ */
+function redactTestResults(
+  testResults: unknown,
+  publicTestCaseIds: Set<string>
+): unknown {
+  if (!Array.isArray(testResults)) {
+    return testResults;
+  }
+
+  return testResults.map((raw) => {
+    const result = raw as StoredTestResult;
+    const isHidden = !publicTestCaseIds.has(result.testCaseId ?? '');
+
+    if (!isHidden) {
+      return result;
+    }
+
+    return {
+      testCaseId: result.testCaseId,
+      passed: result.passed,
+      duration: result.duration,
+      error: result.error,
+      hidden: true,
+    };
+  });
+}
+
+app.get('/', authMiddleware, async (c) => {
+  try {
+    const user = c.get('user');
+    const parsed = listQuerySchema.safeParse(c.req.query());
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          error: 'Invalid input',
+          details: parsed.error.issues,
+        },
+        400
+      );
+    }
+
+    const { limit, offset } = parsed.data;
+    const where = { userId: user.userId };
+
+    const [items, total] = await prisma.$transaction([
+      prisma.submission.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          challenge: { select: { id: true, title: true, difficulty: true } },
+          language: { select: { id: true, name: true } },
+          execution: {
+            select: {
+              testsPassed: true,
+              testsTotal: true,
+              totalDurationMs: true,
+            },
+          },
+        },
+      }),
+      prisma.submission.count({ where }),
+    ]);
+
+    return c.json({
+      success: true,
+      data: { items, total, limit, offset },
+    });
+  } catch (error) {
+    console.error('Error listing submissions:', error);
+    return c.json({ success: false, error: 'Internal Server Error' }, 500);
+  }
+});
+
+app.get('/:id', authMiddleware, async (c) => {
+  try {
+    const user = c.get('user');
+
+    const submission = await prisma.submission.findUnique({
+      where: { id: c.req.param('id') },
+      include: {
+        challenge: { select: { id: true, title: true, difficulty: true } },
+        language: { select: { id: true, name: true } },
+        execution: true,
+      },
+    });
+
+    // Do not reveal whether someone else's submission exists.
+    if (
+      !submission ||
+      (submission.userId !== user.userId && user.role !== 'ADMIN')
+    ) {
+      return c.json({ success: false, error: 'Submission not found' }, 404);
+    }
+
+    let execution = submission.execution;
+
+    if (execution) {
+      const testCases = await prisma.testCase.findMany({
+        where: { challengeId: submission.challengeId },
+        select: { id: true, isPublic: true },
+      });
+      const publicIds = new Set(
+        testCases.filter((testCase) => testCase.isPublic).map((tc) => tc.id)
+      );
+
+      execution = {
+        ...execution,
+        testResults:
+          user.role === 'ADMIN'
+            ? execution.testResults
+            : (redactTestResults(
+                execution.testResults,
+                publicIds
+              ) as typeof execution.testResults),
+      };
+    }
+
+    return c.json({
+      success: true,
+      data: { ...submission, execution },
+    });
+  } catch (error) {
+    console.error('Error fetching submission:', error);
+    return c.json({ success: false, error: 'Internal Server Error' }, 500);
+  }
 });
 
 app.post('/', authMiddleware, async (c) => {

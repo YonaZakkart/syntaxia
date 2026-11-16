@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { Hono } from 'hono';
-import { signToken } from '../lib/jwt';
+import { signAccessToken } from '../lib/jwt';
 import type { AppEnv } from '../types';
 import { authMiddleware } from './auth';
 
-const token = signToken({
+const token = signAccessToken({
   userId: 'user-1',
   email: 'user@example.com',
   role: 'USER',

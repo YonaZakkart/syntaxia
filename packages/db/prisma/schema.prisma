@@ -20,15 +20,28 @@ enum SubmissionStatus {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  password  String
-  role      String   @default("USER") // USER, ADMIN
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String?
+  password      String
+  role          String   @default("USER") // USER, ADMIN
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  submissions Submission[]
+  submissions   Submission[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Language {
@@ -36,6 +49,9 @@ model Language {
   name        String   // e.g., "JavaScript", "Python"
   version     String   // e.g., "18.x", "3.11"
   dockerImage String   // e.g., "node:18-alpine", "python:3.11-slim"
+  defaultTimeLimitMs      Int @default(5000)
+  defaultMemoryLimitMb    Int @default(256)
+  defaultOutputLimitBytes Int @default(1048576) // 1 MB per stream
   createdAt   DateTime @default(now())
   
   challenges  Challenge[]
@@ -50,6 +66,10 @@ model Challenge {
   starterCode   String     @db.Text
   languageId    String
   language      Language   @relation(fields: [languageId], references: [id])
+  // Per-challenge overrides; null falls back to the language defaults.
+  timeLimitMs      Int?
+  memoryLimitMb    Int?
+  outputLimitBytes Int?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -77,4 +97,19 @@ model Submission {
   code        String      @db.Text
   status      SubmissionStatus @default(QUEUED)
   createdAt   DateTime    @default(now())
+
+  execution   Execution?
+}
+
+model Execution {
+  id               String     @id @default(uuid())
+  submissionId     String     @unique
+  submission       Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  testsPassed      Int
+  testsTotal       Int
+  totalDurationMs  Int
+  testResults      Json       // TestResult[] as produced by the test runner
+  failedTestCaseId String?
+  errorMessage     String?
+  createdAt        DateTime   @default(now())
 }

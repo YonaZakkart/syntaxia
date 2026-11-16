@@ -1,12 +1,16 @@
 import type { Language, Submission, TestCase } from '@syntaxia/db';
-import { type ExecutionResult, executeInSandbox } from './docker-sandbox';
+import {
+  type ExecutionResult,
+  type SandboxRunOptions,
+  executeInSandbox,
+} from './docker-sandbox';
+import { type ExecutionLimits, GLOBAL_DEFAULT_LIMITS } from './limits';
 
 export type SandboxExecutor = (
   code: string,
   languageName: string,
   dockerImage: string,
-  timeoutMs?: number,
-  stdinInput?: string
+  options?: SandboxRunOptions
 ) => Promise<ExecutionResult>;
 
 interface TestRunnerInput {
@@ -16,6 +20,7 @@ interface TestRunnerInput {
     };
     language: Language;
   };
+  limits?: ExecutionLimits;
 }
 
 export interface TestResult {
@@ -46,8 +51,6 @@ export interface TestRunnerResult {
   testResults: TestResult[];
 }
 
-const TEST_TIMEOUT_MS = 5000;
-
 // The `timeout` command exits with 124 when it kills the child process.
 const TIMEOUT_EXIT_CODE = 124;
 // 128 + SIGKILL (9), typically the OOM killer inside the container.
@@ -58,7 +61,7 @@ function normalizeOutput(output: string): string {
 }
 
 export async function runTests(
-  { submission }: TestRunnerInput,
+  { submission, limits = GLOBAL_DEFAULT_LIMITS }: TestRunnerInput,
   execute: SandboxExecutor = executeInSandbox
 ): Promise<TestRunnerResult> {
   const { code, language, challenge } = submission;
@@ -107,13 +110,12 @@ export async function runTests(
     const testStartTime = Date.now();
 
     try {
-      const result = await execute(
-        code,
-        language.name,
-        language.dockerImage,
-        TEST_TIMEOUT_MS,
-        testCase.input
-      );
+      const result = await execute(code, language.name, language.dockerImage, {
+        timeoutMs: limits.timeLimitMs,
+        stdinInput: testCase.input,
+        memoryLimitBytes: limits.memoryLimitMb * 1024 * 1024,
+        outputLimitBytes: limits.outputLimitBytes,
+      });
 
       const testDuration = Date.now() - testStartTime;
       const actualOutput = normalizeOutput(result.stdout);

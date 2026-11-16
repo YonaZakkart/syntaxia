@@ -1,7 +1,11 @@
 import { prisma } from '@syntaxia/db';
 import { Hono } from 'hono';
+import { challengeRateLimit } from '../middleware/rateLimit';
 
 const app = new Hono();
+
+// Apply rate limiting to all challenge routes
+app.use('*', challengeRateLimit);
 
 app.get('/', async (c) => {
   try {
