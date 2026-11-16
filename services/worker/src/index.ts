@@ -1,3 +1,4 @@
+import './lib/env';
 import { prisma } from '@syntaxia/db';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
