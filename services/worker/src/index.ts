@@ -11,6 +11,10 @@ const connection = new IORedis(
   }
 );
 
+connection.on('error', (error) => {
+  console.error('[worker] Redis connection error:', error.message);
+});
+
 console.log('Worker started, listening on queue "code-execution"...');
 
 const worker = new Worker(
