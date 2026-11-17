@@ -4,6 +4,7 @@ Syntaxia is a pnpm monorepo with three deployable workspaces:
 
 | Workspace | Role |
 |-----------|------|
+| `apps/web` | Next.js App Router frontend (default port `3000`) |
 | `apps/api` | Hono HTTP API (default port `3001`) |
 | `services/worker` | BullMQ consumer that executes code in Docker sandboxes |
 | `packages/db` | Prisma schema, generated client and seed script |
@@ -14,15 +15,19 @@ inside the API process: every execution happens in a disposable Docker
 container managed by the worker.
 
 ```
-Browser ──HTTP──▶ API (Hono) ──SQL──▶ PostgreSQL
-                    │
-                    ├── BullMQ ──▶ Redis
-                    │                 ▲
-                    ▼                 │
-               Worker ──dockerode──▶ Docker sandbox
-                    │                 │
-                    └──results────────┘
+Browser ──HTTP──▶ Web (Next.js) ──HTTP──▶ API (Hono) ──SQL──▶ PostgreSQL
+                                             │
+                                             ├── BullMQ ──▶ Redis
+                                             │                 ▲
+                                             ▼                 │
+                                        Worker ──dockerode──▶ Docker sandbox
+                                             │                 │
+                                             └──results────────┘
 ```
+
+The frontend is currently a server-rendered landing page (Phase 1). It calls the
+API through `NEXT_PUBLIC_API_URL`; browser sessions and the code editor are added
+in later phases.
 
 ## Main flows
 
@@ -62,6 +67,25 @@ test-case payloads are redacted for non-admin users.
 - Every refresh rotates the token and revokes the stored row. Reusing a revoked
   token revokes all sessions for that user.
 - `JWT_SECRET` is mandatory. The API fails fast at startup if it is missing.
+
+## Frontend
+
+`apps/web` uses the Next.js App Router with strict TypeScript, React Server
+Components and Tailwind CSS 4. It is built with Turbopack and linted by the same
+root Biome configuration as the backend (no ESLint).
+
+Current scope (Phase 1) is the shared layout and the landing page. The planned
+route groups are `(auth)` for login/register, `(dashboard)` for challenges,
+submissions and profile, and API rewrites for the HttpOnly refresh cookie.
+
+Environment variables (`apps/web/.env.example`):
+
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_API_URL` | Backend base URL (`http://localhost:3001` in development) |
+| `NEXT_PUBLIC_WS_URL` | Reserved for future real-time transports |
+
+`pnpm dev` starts the web app on `:3000`, the API on `:3001` and the worker.
 
 ## Execution limits
 

@@ -16,6 +16,7 @@ isolated Docker sandbox.
 ## Tech stack
 
 - **Monorepo**: pnpm workspaces
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **API**: Node.js, TypeScript, Hono, Zod, Prisma
 - **Database**: PostgreSQL 16
 - **Queue / cache**: Redis 7 + BullMQ 6
@@ -46,7 +47,8 @@ pnpm dev:infra
 pnpm db:push
 pnpm db:seed
 
-# 5. Run the API (http://localhost:3001) and the execution worker
+# 5. Run the frontend (http://localhost:3000), API (http://localhost:3001)
+#    and the execution worker
 pnpm dev
 ```
 
@@ -94,18 +96,26 @@ Protected routes expect `Authorization: Bearer <access-token>`. Responses use
 ## Architecture
 
 ```
-apps/api ──▶ PostgreSQL
-    │
-    ├── BullMQ ──▶ Redis ──▶ services/worker ──▶ Docker sandbox
-    └── rate limit + ephemeral run state in Redis
+apps/web ──▶ apps/api ──▶ PostgreSQL
+                 │
+                 ├── BullMQ ──▶ Redis ──▶ services/worker ──▶ Docker sandbox
+                 └── rate limit + ephemeral run state in Redis
 ```
 
 See [docs/architecture.md](docs/architecture.md) for request flows, execution
 limits, sandbox isolation, the data model and operational notes.
 
+## Frontend
+
+`apps/web` is currently at **Phase 1**: Next.js App Router, strict TypeScript,
+Tailwind CSS and the public landing page. Auth UI, challenge browsing, the
+Monaco editor and submission views arrive in the following branches. The web
+app reads `NEXT_PUBLIC_API_URL` (see `apps/web/.env.example`).
+
 ## Project structure
 
 ```
+apps/web/          Next.js frontend (port 3000)
 apps/api/          Hono API (port 3001)
 services/worker/   BullMQ consumer + Docker sandbox
 packages/db/       Prisma schema, client and seed script
