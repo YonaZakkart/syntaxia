@@ -1,5 +1,10 @@
-import { Prisma, prisma } from '@syntaxia/db';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from './jwt';
+import { prisma } from '@syntaxia/db';
+import {
+  type RefreshTokenPayload,
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from './jwt';
 import { comparePassword, hashPassword } from './password';
 
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
@@ -7,6 +12,13 @@ const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 export interface RefreshTokenResult {
   refreshToken: string;
   expiresAt: Date;
+}
+
+export interface ValidatedRefreshToken {
+  userId: string;
+  tokenId: string;
+  /** Primary key of the RefreshToken row, used to revoke deterministically. */
+  recordId: string;
 }
 
 export async function createRefreshToken(
@@ -35,8 +47,13 @@ export async function createRefreshToken(
 
 export async function validateRefreshToken(
   refreshToken: string
-): Promise<{ userId: string; tokenId: string } | null> {
-  const decoded = verifyRefreshToken(refreshToken);
+): Promise<ValidatedRefreshToken | null> {
+  let decoded: RefreshTokenPayload;
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch {
+    return null;
+  }
 
   const storedTokens = await prisma.refreshToken.findMany({
     where: {
@@ -46,36 +63,28 @@ export async function validateRefreshToken(
     },
   });
 
+  // bcrypt hashes are salted, so the token cannot be looked up by hash.
+  // Compare against the user's active tokens instead.
   for (const stored of storedTokens) {
     const isValid = await comparePassword(refreshToken, stored.tokenHash);
     if (isValid) {
-      return { userId: decoded.userId, tokenId: decoded.tokenId };
+      return {
+        userId: decoded.userId,
+        tokenId: decoded.tokenId,
+        recordId: stored.id,
+      };
     }
   }
 
   return null;
 }
 
-export async function revokeRefreshToken(tokenHash: string): Promise<void> {
-  await prisma.refreshToken
-    .update({
-      where: { tokenHash },
-      data: { revokedAt: new Date() },
-    })
-    .catch(() => {
-      // Token might not exist or already revoked
-    });
-}
-
-export async function revokeAllUserRefreshTokens(
-  userId: string
-): Promise<void> {
-  await prisma.refreshToken.updateMany({
-    where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-}
-
+/**
+ * Rotate a refresh token: revoke the stored row and issue a new pair.
+ *
+ * Revocation is keyed by the row id because bcrypt hashes are salted and a
+ * freshly computed hash would never match the stored one.
+ */
 export async function rotateRefreshToken(oldRefreshToken: string): Promise<{
   accessToken: string;
   refreshToken: string;
@@ -87,11 +96,16 @@ export async function rotateRefreshToken(oldRefreshToken: string): Promise<{
     return null;
   }
 
-  // Revoke the old token
-  const oldTokenHash = await hashPassword(oldRefreshToken);
-  await revokeRefreshToken(oldTokenHash);
+  // Only one concurrent rotation can win.
+  const revoked = await prisma.refreshToken.updateMany({
+    where: { id: validated.recordId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
 
-  // Create new tokens
+  if (revoked.count === 0) {
+    return null;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: validated.userId },
     select: { id: true, email: true, role: true },
@@ -115,17 +129,53 @@ export async function rotateRefreshToken(oldRefreshToken: string): Promise<{
   };
 }
 
+/**
+ * Detect replay of an already-rotated refresh token.
+ *
+ * Invalid/expired JWTs are not treated as reuse (the caller returns 401).
+ */
 export async function detectReusedRefreshToken(
   refreshToken: string
 ): Promise<boolean> {
-  const decoded = verifyRefreshToken(refreshToken);
-  const tokenHash = await hashPassword(refreshToken);
+  let decoded: RefreshTokenPayload;
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch {
+    return false;
+  }
 
-  const stored = await prisma.refreshToken.findUnique({
-    where: { tokenHash },
-    select: { revokedAt: true },
+  const storedTokens = await prisma.refreshToken.findMany({
+    where: { userId: decoded.userId },
   });
 
-  // If the token exists and is revoked, it was already used (reused)
-  return stored !== null && stored.revokedAt !== null;
+  for (const stored of storedTokens) {
+    if (await comparePassword(refreshToken, stored.tokenHash)) {
+      return stored.revokedAt !== null;
+    }
+  }
+
+  return false;
+}
+
+export async function revokeAllUserRefreshTokens(
+  userId: string
+): Promise<void> {
+  await prisma.refreshToken.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
+
+/**
+ * Remove expired rows so the table does not grow forever.
+ *
+ * Revoked-but-unexpired rows are kept so replay of an old token can still be
+ * detected. Intended to be called by a scheduled job (see docs/architecture.md).
+ */
+export async function cleanupRefreshTokens(): Promise<number> {
+  const result = await prisma.refreshToken.deleteMany({
+    where: { expiresAt: { lt: new Date() } },
+  });
+
+  return result.count;
 }

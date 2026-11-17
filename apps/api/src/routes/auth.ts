@@ -3,21 +3,20 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
-import {
-  signAccessToken,
-  signRefreshToken,
-  verifyAccessToken,
-} from '../lib/jwt';
+import { signAccessToken, verifyRefreshToken } from '../lib/jwt';
 import { comparePassword, hashPassword } from '../lib/password';
 import {
   createRefreshToken,
   detectReusedRefreshToken,
   revokeAllUserRefreshTokens,
-  revokeRefreshToken,
-  validateRefreshToken,
+  rotateRefreshToken,
 } from '../lib/refreshToken';
 import { authMiddleware } from '../middleware/auth';
-import { loginRateLimit, strictRateLimit } from '../middleware/rateLimit';
+import {
+  loginRateLimit,
+  refreshRateLimit,
+  registerRateLimit,
+} from '../middleware/rateLimit';
 
 const app = new Hono();
 
@@ -33,10 +32,6 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: emailSchema,
   password: z.string(),
-});
-
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
 });
 
 // Helper to set refresh token cookie
@@ -62,7 +57,7 @@ function clearRefreshTokenCookie(c: Context) {
 }
 
 // POST /api/auth/register
-app.post('/register', strictRateLimit, async (c) => {
+app.post('/register', registerRateLimit, async (c) => {
   try {
     const body = await c.req.json();
     const validated = registerSchema.parse(body);
@@ -194,11 +189,24 @@ app.post('/login', loginRateLimit, async (c) => {
 });
 
 // POST /api/auth/refresh
-app.post('/refresh', strictRateLimit, async (c) => {
+app.post('/refresh', refreshRateLimit, async (c) => {
   try {
-    // Get refresh token from cookie or body
+    // Cookie first; body is an optional fallback for non-browser clients.
+    let bodyToken: unknown;
+    if (!getCookie(c, 'refreshToken')) {
+      try {
+        const body = await c.req.json();
+        bodyToken = body?.refreshToken;
+      } catch {
+        // Missing/invalid JSON body is fine: the token may come from a cookie.
+      }
+    }
+
     const refreshToken =
-      getCookie(c, 'refreshToken') || (await c.req.json()).refreshToken;
+      getCookie(c, 'refreshToken') ??
+      (typeof bodyToken === 'string' && bodyToken.length > 0
+        ? bodyToken
+        : undefined);
 
     if (!refreshToken) {
       return c.json({ success: false, error: 'Refresh token required' }, 401);
@@ -209,10 +217,8 @@ app.post('/refresh', strictRateLimit, async (c) => {
     if (isReused) {
       // Token was already used - possible token theft
       // Revoke all user's tokens for safety
-      const decoded = await import('../lib/jwt')
-        .then((m) => m.verifyRefreshToken(refreshToken))
-        .catch(() => null);
-      if (decoded?.userId) {
+      const decoded = verifyRefreshToken(refreshToken);
+      if (decoded.userId) {
         await revokeAllUserRefreshTokens(decoded.userId);
       }
       clearRefreshTokenCookie(c);
@@ -223,9 +229,7 @@ app.post('/refresh', strictRateLimit, async (c) => {
     }
 
     // Validate and rotate refresh token
-    const result = await import('../lib/refreshToken').then((m) =>
-      m.rotateRefreshToken(refreshToken)
-    );
+    const result = await rotateRefreshToken(refreshToken);
 
     if (!result) {
       clearRefreshTokenCookie(c);

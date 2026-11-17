@@ -65,16 +65,22 @@ export const globalRateLimit = createRateLimiter({
   keyPrefix: 'global',
 });
 
-export const strictRateLimit = createRateLimiter({
+export const registerRateLimit = createRateLimiter({
   windowMs: 15 * 60_000,
   limit: 5,
-  keyPrefix: 'auth',
+  keyPrefix: 'auth:register',
 });
 
 export const loginRateLimit = createRateLimiter({
   windowMs: 15 * 60_000,
   limit: 10,
-  keyPrefix: 'auth',
+  keyPrefix: 'auth:login',
+});
+
+export const refreshRateLimit = createRateLimiter({
+  windowMs: 15 * 60_000,
+  limit: 5,
+  keyPrefix: 'auth:refresh',
 });
 
 export const submissionRateLimit = createRateLimiter({
