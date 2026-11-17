@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignore": ["**/dist/**", "**/generated/**"]
+    "ignore": [
+      "**/dist/**",
+      "**/generated/**",
+      "**/.next/**",
+      "**/out/**",
+      "**/next-env.d.ts",
+      "**/*.tsbuildinfo"
+    ]
   },
   "organizeImports": {
     "enabled": true

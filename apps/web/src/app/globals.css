@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  --color-brand: #34d399;
+  --color-brand-muted: #064e3b;
+  --color-surface: #020617;
+  --color-panel: #0f172a;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-surface);
+}
+
+::selection {
+  background-color: rgb(52 211 153 / 30%);
+  color: #f8fafc;
+}
+
+.bg-grid {
+  background-image: linear-gradient(
+      to right,
+      rgb(148 163 184 / 6%) 1px,
+      transparent 1px
+    ), linear-gradient(to bottom, rgb(148 163 184 / 6%) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
