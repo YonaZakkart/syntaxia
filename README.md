@@ -25,7 +25,7 @@ isolated Docker sandbox.
 ## Requirements
 
 - Node.js >= 20.12
-- pnpm >= 8
+- pnpm >= 10
 - Docker (for PostgreSQL, Redis and the execution sandbox)
 
 ## Quick start

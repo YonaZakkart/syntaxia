@@ -8,7 +8,7 @@ on:
 
 env:
   NODE_VERSION: '20'
-  PNPM_VERSION: '8'
+  PNPM_VERSION: '10'
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/syntaxia?schema=public
   REDIS_URL: redis://localhost:6379
   JWT_SECRET: ci-test-secret-key-for-github-actions-only
