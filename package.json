@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "pnpm --filter @syntaxia/db build && pnpm -r run dev",
     "dev:worker": "pnpm --filter @syntaxia/db build && pnpm --filter @syntaxia/worker dev",
-    "build": "pnpm -r run build",
+    "build": "pnpm -r --workspace-concurrency=1 run build",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "pnpm -r --if-present run test",
