@@ -7,6 +7,7 @@ import { logger } from 'hono/logger';
 import { globalRateLimit } from './middleware/rateLimit';
 import authRoute from './routes/auth';
 import challengesRoute from './routes/challenges';
+import executionsRoute from './routes/executions';
 import submissionsRoute from './routes/submissions';
 
 const app = new Hono();
@@ -33,6 +34,7 @@ app.get('/', (c) => c.json({ message: 'Syntaxia API is running' }));
 // Routes
 app.route('/api/auth', authRoute);
 app.route('/api/challenges', challengesRoute);
+app.route('/api/executions', executionsRoute);
 app.route('/api/submissions', submissionsRoute);
 
 const port = Number(process.env.PORT ?? 3001);

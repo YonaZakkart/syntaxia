@@ -2,7 +2,7 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 
 // BullMQ requires maxRetriesPerRequest: null on the ioredis connection.
-const connection = new IORedis(
+export const connection = new IORedis(
   process.env.REDIS_URL || 'redis://localhost:6379',
   {
     maxRetriesPerRequest: null,
