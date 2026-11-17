@@ -9,12 +9,11 @@
     "test": "JWT_SECRET=test-secret node --import tsx --test src/middleware/auth.test.ts src/lib/limits.test.ts src/lib/runStore.test.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^2.1.8",
     "@syntaxia/db": "workspace:*",
     "bcrypt": "^6.0.0",
-    "bullmq": "^6.4.1",
-    "hono": "^4.6.3",
-    "hono-rate-limiter": "^0.5.4",
+    "bullmq": "^6.7.6",
+    "hono": "^4.13.18",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "zod": "^4.6.7"
