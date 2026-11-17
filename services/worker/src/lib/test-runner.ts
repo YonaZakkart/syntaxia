@@ -1,4 +1,4 @@
-import type { Language, Submission, TestCase } from '@syntaxia/db';
+import type { TestCase } from '@syntaxia/db';
 import {
   type ExecutionResult,
   type SandboxRunOptions,
@@ -14,12 +14,9 @@ export type SandboxExecutor = (
 ) => Promise<ExecutionResult>;
 
 interface TestRunnerInput {
-  submission: Submission & {
-    challenge: {
-      testCases: TestCase[];
-    };
-    language: Language;
-  };
+  code: string;
+  language: { name: string; dockerImage: string };
+  testCases: TestCase[];
   limits?: ExecutionLimits;
 }
 
@@ -61,12 +58,14 @@ function normalizeOutput(output: string): string {
 }
 
 export async function runTests(
-  { submission, limits = GLOBAL_DEFAULT_LIMITS }: TestRunnerInput,
+  {
+    code,
+    language,
+    testCases,
+    limits = GLOBAL_DEFAULT_LIMITS,
+  }: TestRunnerInput,
   execute: SandboxExecutor = executeInSandbox
 ): Promise<TestRunnerResult> {
-  const { code, language, challenge } = submission;
-  const testCases = challenge.testCases;
-
   if (testCases.length === 0) {
     return {
       finalStatus: 'SYSTEM_ERROR',

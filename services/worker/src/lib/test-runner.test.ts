@@ -8,32 +8,21 @@ interface Case {
   expectedOutput: string;
 }
 
-function buildSubmission(code: string, cases: Case[]) {
+function buildInput(code: string, cases: Case[]) {
   return {
-    id: 'submission-1',
-    userId: 'user-1',
-    challengeId: 'challenge-1',
-    languageId: 'language-1',
     code,
-    status: 'QUEUED',
-    createdAt: new Date(),
-    challenge: {
-      testCases: cases.map((testCase, index) => ({
-        id: `tc-${index}`,
-        input: testCase.input,
-        expectedOutput: testCase.expectedOutput,
-        challengeId: 'challenge-1',
-        isPublic: false,
-      })),
-    },
+    testCases: cases.map((testCase, index) => ({
+      id: `tc-${index}`,
+      input: testCase.input,
+      expectedOutput: testCase.expectedOutput,
+      challengeId: 'challenge-1',
+      isPublic: false,
+    })),
     language: {
-      id: 'language-1',
       name: 'Python',
-      version: '3.11',
       dockerImage: 'python:3.11-slim',
-      createdAt: new Date(),
     },
-  } as unknown as Parameters<typeof runTests>[0]['submission'];
+  };
 }
 
 function executorFrom(
@@ -69,9 +58,7 @@ const twoCases: Case[] = [
 describe('runTests', () => {
   it('passes when every test case matches', async () => {
     const result = await runTests(
-      {
-        submission: buildSubmission('code', twoCases),
-      },
+      buildInput('code', twoCases),
       executorFrom({
         first: success('ok\n'),
         second: success('ok\n'),
@@ -89,7 +76,7 @@ describe('runTests', () => {
 
   it('reports WRONG_ANSWER when a later test case differs', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({
         first: success('ok\n'),
         second: success('nope\n'),
@@ -103,7 +90,7 @@ describe('runTests', () => {
 
   it('reports RUNTIME_ERROR after a passing test (regression)', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({
         first: success('ok\n'),
         second: {
@@ -122,7 +109,7 @@ describe('runTests', () => {
 
   it('reports COMPILATION_ERROR when the sandbox flags a compile failure', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({
         first: success('ok\n'),
         second: {
@@ -141,7 +128,7 @@ describe('runTests', () => {
 
   it('reports TIME_LIMIT_EXCEEDED for exit code 124', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({
         first: { stdout: '', stderr: '', exitCode: 124, duration: 1 },
         second: success('ok\n'),
@@ -154,7 +141,7 @@ describe('runTests', () => {
 
   it('reports MEMORY_LIMIT_EXCEEDED for SIGKILL exit code 137', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({
         first: { stdout: '', stderr: '', exitCode: 137, duration: 1 },
         second: success('ok\n'),
@@ -166,7 +153,7 @@ describe('runTests', () => {
 
   it('reports SYSTEM_ERROR when the sandbox itself fails', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({
         first: {
           stdout: '',
@@ -184,7 +171,7 @@ describe('runTests', () => {
 
   it('reports SYSTEM_ERROR when the executor throws', async () => {
     const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
+      buildInput('code', twoCases),
       executorFrom({ first: new Error('boom') })
     );
 
@@ -194,11 +181,7 @@ describe('runTests', () => {
 
   it('reports RUNTIME_ERROR when the output exceeds the limit', async () => {
     const result = await runTests(
-      {
-        submission: buildSubmission('code', [
-          { input: 'first', expectedOutput: 'ok' },
-        ]),
-      },
+      buildInput('code', [{ input: 'first', expectedOutput: 'ok' }]),
       executorFrom({
         first: {
           stdout: 'x'.repeat(10),
@@ -216,11 +199,7 @@ describe('runTests', () => {
 
   it('normalizes CRLF line endings before comparing', async () => {
     const result = await runTests(
-      {
-        submission: buildSubmission('code', [
-          { input: 'first', expectedOutput: 'a\r\nb' },
-        ]),
-      },
+      buildInput('code', [{ input: 'first', expectedOutput: 'a\r\nb' }]),
       executorFrom({ first: success('a\nb\n') })
     );
 
@@ -234,10 +213,7 @@ describe('runTests', () => {
       return success('wrong\n');
     };
 
-    const result = await runTests(
-      { submission: buildSubmission('code', twoCases) },
-      executor
-    );
+    const result = await runTests(buildInput('code', twoCases), executor);
 
     assert.equal(result.finalStatus, 'WRONG_ANSWER');
     assert.equal(calls, 1);
@@ -258,9 +234,7 @@ describe('runTests', () => {
 
     const result = await runTests(
       {
-        submission: buildSubmission('code', [
-          { input: 'first', expectedOutput: 'ok' },
-        ]),
+        ...buildInput('code', [{ input: 'first', expectedOutput: 'ok' }]),
         limits: {
           timeLimitMs: 15000,
           memoryLimitMb: 512,
@@ -278,10 +252,7 @@ describe('runTests', () => {
   });
 
   it('reports SYSTEM_ERROR when the challenge has no test cases', async () => {
-    const result = await runTests(
-      { submission: buildSubmission('code', []) },
-      executorFrom({})
-    );
+    const result = await runTests(buildInput('code', []), executorFrom({}));
 
     assert.equal(result.finalStatus, 'SYSTEM_ERROR');
     assert.equal(result.testsTotal, 0);
