@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@syntaxia/db": "workspace:*",
-    "bullmq": "^6.4.1",
+    "bullmq": "^6.7.6",
     "dockerode": "^5.0.1",
     "ioredis": "^6.0.0",
     "tar-stream": "^3.2.2"
