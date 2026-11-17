@@ -21,6 +21,7 @@
     "db:push": "pnpm --filter @syntaxia/db db:push",
     "db:studio": "pnpm --filter @syntaxia/db db:studio",
     "db:generate": "pnpm --filter @syntaxia/db db:generate",
+    "db:migrate": "pnpm --filter @syntaxia/db db:migrate",
     "db:seed": "pnpm --filter @syntaxia/db db:seed"
   },
   "devDependencies": {
