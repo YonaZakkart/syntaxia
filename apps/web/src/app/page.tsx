@@ -108,7 +108,7 @@ export default function HomePage() {
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <a
               className="inline-flex items-center justify-center rounded-xl bg-brand px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
-              href="#features"
+              href="/challenges"
             >
               Explore the platform
             </a>
