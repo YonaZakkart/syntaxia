@@ -46,14 +46,13 @@ export function ChallengeCard({ challenge }: { challenge: ChallengeSummary }) {
         </div>
         <CardTitle className="mt-3 text-base">{challenge.title}</CardTitle>
         <CardDescription className="text-sm leading-relaxed">
-          Open the challenge to read the statement, constraints and starter
-          code.
+          Read the statement, constraints and starter code.
         </CardDescription>
       </CardHeader>
       <CardContent className="mt-auto">
         <p className="flex items-center gap-2 border-t border-white/5 pt-4 text-xs text-slate-500">
           <Code2 aria-hidden className="size-3.5" />
-          Detail view arrives in 0.6.0
+          Detail view coming next
         </p>
       </CardContent>
     </Card>
