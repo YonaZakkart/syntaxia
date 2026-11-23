@@ -2,7 +2,13 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowRight, ListChecks } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Submissions — Syntaxia',
+  description: 'Review your submissions and per-test results.',
+};
 
 export default function SubmissionsPage() {
   return (

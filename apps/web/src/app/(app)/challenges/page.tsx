@@ -9,7 +9,14 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ArrowRight, Code2, Filter } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Challenges — Syntaxia',
+  description:
+    'Browse coding challenges and practice with a real online judge.',
+};
 
 const sampleChallenges = [
   {
