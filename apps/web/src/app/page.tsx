@@ -65,7 +65,7 @@ export default function HomePage() {
 
         <nav
           aria-label="Main navigation"
-          className="hidden items-center gap-8 text-sm text-slate-400 sm:flex"
+          className="hidden items-center gap-5 text-sm text-slate-400 sm:flex"
         >
           <a className="transition hover:text-white" href="#features">
             Features
@@ -80,6 +80,18 @@ export default function HomePage() {
             target="_blank"
           >
             GitHub
+          </a>
+          <a
+            className="rounded-lg border border-white/10 px-3 py-1.5 text-slate-200 transition hover:border-white/20 hover:bg-white/5"
+            href="/login"
+          >
+            Sign in
+          </a>
+          <a
+            className="rounded-lg bg-brand px-3 py-1.5 font-semibold text-slate-950 transition hover:bg-emerald-300"
+            href="/register"
+          >
+            Get started
           </a>
         </nav>
       </header>

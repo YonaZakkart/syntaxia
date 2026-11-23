@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@/components/auth/auth-provider';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,9 +23,16 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, ChevronDown, LogIn, Menu, Sparkles } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  LogIn,
+  LogOut,
+  Menu,
+  Sparkles,
+} from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useState } from 'react';
 import { appNavItems } from './nav-items';
 
@@ -77,7 +85,27 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+function getInitials(value: string) {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return value.slice(0, 2).toUpperCase();
+}
+
 function UserMenu() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+  const displayName = user?.name?.trim() || user?.email || 'Guest';
+  const initials = getInitials(displayName);
+
+  async function handleLogout() {
+    await logout();
+    router.replace('/login');
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -87,29 +115,46 @@ function UserMenu() {
         >
           <Avatar size="sm">
             <AvatarFallback className="bg-brand/15 text-xs font-semibold text-brand">
-              G
+              {initials}
             </AvatarFallback>
           </Avatar>
-          <span className="hidden text-sm text-slate-300 sm:inline">Guest</span>
+          <span className="hidden max-w-32 truncate text-sm text-slate-300 sm:inline">
+            {displayName}
+          </span>
           <ChevronDown aria-hidden className="size-3.5 text-slate-500" />
           <span className="sr-only">Open user menu</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel>
-          <span className="block text-sm">Guest session</span>
-          <span className="block text-xs font-normal text-muted-foreground">
-            Authentication arrives in 0.5.0
+          <span className="block truncate text-sm">
+            {user?.name?.trim() || 'Signed in'}
+          </span>
+          <span className="block truncate text-xs font-normal text-muted-foreground">
+            {user?.email ?? 'No active session'}
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profile">Profile</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem disabled>
-          <LogIn aria-hidden className="size-4" />
-          Sign in (soon)
-        </DropdownMenuItem>
+        {user ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              void handleLogout();
+            }}
+          >
+            <LogOut aria-hidden className="size-4" />
+            Log out
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem asChild>
+            <Link href="/login">
+              <LogIn aria-hidden className="size-4" />
+              Sign in
+            </Link>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
