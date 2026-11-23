@@ -1,5 +1,7 @@
 # Syntaxia
 
+**Current version**: `0.4.0` — backend complete, frontend at Phase 1.
+
 AI-powered coding practice platform and online judge. Solve challenges in the
 browser, run code against public tests, and submit solutions for grading in an
 isolated Docker sandbox.
@@ -111,6 +113,20 @@ limits, sandbox isolation, the data model and operational notes.
 Tailwind CSS and the public landing page. Auth UI, challenge browsing, the
 Monaco editor and submission views arrive in the following branches. The web
 app reads `NEXT_PUBLIC_API_URL` (see `apps/web/.env.example`).
+
+## Status
+
+| Area | State |
+|------|-------|
+| API, auth, queue, worker, sandbox | Complete |
+| Challenge and submission endpoints | Complete |
+| Frontend | Phase 1 (landing) |
+| MVP target | `1.0.0` |
+
+The next milestones are the application shell and auth UI (`0.5.0`), challenge
+browsing and the editor (`0.6.0`), results and submission history (`0.7.0`),
+hardening (`0.8.0`), production readiness (`0.9.0`) and the MVP release
+(`1.0.0`).
 
 ## Project structure
 
