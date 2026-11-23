@@ -25,9 +25,11 @@ Browser ──HTTP──▶ Web (Next.js) ──HTTP──▶ API (Hono) ──S
                                              └──results────────┘
 ```
 
-The frontend is currently a server-rendered landing page (Phase 1). It calls the
-API through `NEXT_PUBLIC_API_URL`; browser sessions and the code editor are added
-in later phases.
+The frontend is at Phase 3: landing, responsive app shell and authentication UI.
+The browser calls relative `/api/*` paths and Next.js proxies them to the API, so
+the HttpOnly refresh cookie stays same-origin. The access token is kept in
+memory and restored with the refresh cookie on reload. Challenge browsing and
+the editor are added in later phases.
 
 ## Main flows
 
@@ -74,15 +76,31 @@ test-case payloads are redacted for non-admin users.
 Components and Tailwind CSS 4. It is built with Turbopack and linted by the same
 root Biome configuration as the backend (no ESLint).
 
-Current scope (Phase 1) is the shared layout and the landing page. The planned
-route groups are `(auth)` for login/register, `(dashboard)` for challenges,
-submissions and profile, and API rewrites for the HttpOnly refresh cookie.
+Current scope (Phase 3) is the landing, the responsive app shell and the
+authentication UI. Route groups are `(auth)` for login/register and `(app)` for
+the protected challenges, submissions and profile routes. `/api/*` is rewritten
+to the API so the refresh cookie remains same-origin.
+
+### Web authentication
+
+1. `POST /api/auth/register` or `POST /api/auth/login` returns a short-lived
+   access token and sets the rotating `refreshToken` cookie (`HttpOnly`,
+   `SameSite=Strict`, path `/api/auth/refresh`).
+2. The access token lives only in memory; the user object is cached in
+   `localStorage` for display, never for authorization.
+3. On reload, `AuthProvider` calls `/api/auth/refresh`; the cookie is sent to the
+   same origin through the Next.js proxy and the session is restored.
+4. Concurrent refreshes share one request, and an API response with
+   `TOKEN_EXPIRED` triggers one refresh and a retry.
+5. `ProtectedShell` redirects guests to `/login`; logout revokes the session and
+   clears the cookie.
 
 Environment variables (`apps/web/.env.example`):
 
 | Variable | Purpose |
 |----------|---------|
-| `NEXT_PUBLIC_API_URL` | Backend base URL (`http://localhost:3001` in development) |
+| `API_URL` | Server-side API origin used by the Next.js rewrite (`http://localhost:3001`) |
+| `NEXT_PUBLIC_API_URL` | Backend base URL for direct browser calls when needed |
 | `NEXT_PUBLIC_WS_URL` | Reserved for future real-time transports |
 
 `pnpm dev` starts the web app on `:3000`, the API on `:3001` and the worker.
