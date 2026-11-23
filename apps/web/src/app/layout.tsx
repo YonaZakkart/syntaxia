@@ -1,3 +1,4 @@
+import { AuthProvider } from '@/components/auth/auth-provider';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
@@ -12,9 +13,9 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html className="dark" lang="en">
       <body className="min-h-screen bg-surface text-slate-100 antialiased">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

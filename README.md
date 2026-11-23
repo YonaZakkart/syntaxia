@@ -1,6 +1,6 @@
 # Syntaxia
 
-**Current version**: `0.4.0` — backend complete, frontend at Phase 1.
+**Current version**: `0.5.0` — backend complete, frontend shell and auth UI.
 
 AI-powered coding practice platform and online judge. Solve challenges in the
 browser, run code against public tests, and submit solutions for grading in an
@@ -12,6 +12,7 @@ isolated Docker sandbox.
 - Secure code execution sandbox (Docker, no network, resource limits)
 - "Run Code" against public test cases without polluting submission history
 - JWT authentication with rotating refresh tokens
+- Responsive app shell with protected routes and session refresh
 - Submission history with per-test results
 - Seed data for languages and challenges (idempotent)
 
@@ -39,6 +40,7 @@ pnpm install
 
 # 2. Configure the environment
 cp .env.example .env
+cp apps/web/.env.example apps/web/.env.local
 # Edit .env and set a real JWT_SECRET:
 #   openssl rand -base64 64
 
@@ -109,10 +111,16 @@ limits, sandbox isolation, the data model and operational notes.
 
 ## Frontend
 
-`apps/web` is currently at **Phase 1**: Next.js App Router, strict TypeScript,
-Tailwind CSS and the public landing page. Auth UI, challenge browsing, the
-Monaco editor and submission views arrive in the following branches. The web
-app reads `NEXT_PUBLIC_API_URL` (see `apps/web/.env.example`).
+`apps/web` is at **Phase 3**: Next.js App Router, strict TypeScript, Tailwind
+CSS, the public landing page, a responsive app shell and the login/register
+flow. Challenge browsing, the Monaco editor and submission views arrive in the
+following versions.
+
+The browser calls relative `/api/*` paths; Next.js proxies them to the API so
+the HttpOnly refresh cookie stays same-origin. Set `API_URL` for the proxy and
+`NEXT_PUBLIC_API_URL` only for direct browser calls (see
+`apps/web/.env.example`). The access token is kept in memory and restored with
+the refresh cookie on reload.
 
 ## Status
 
@@ -120,13 +128,12 @@ app reads `NEXT_PUBLIC_API_URL` (see `apps/web/.env.example`).
 |------|-------|
 | API, auth, queue, worker, sandbox | Complete |
 | Challenge and submission endpoints | Complete |
-| Frontend | Phase 1 (landing) |
+| Frontend | Phase 3 (shell + auth UI) |
 | MVP target | `1.0.0` |
 
-The next milestones are the application shell and auth UI (`0.5.0`), challenge
-browsing and the editor (`0.6.0`), results and submission history (`0.7.0`),
-hardening (`0.8.0`), production readiness (`0.9.0`) and the MVP release
-(`1.0.0`).
+The next milestones are challenge browsing and the editor (`0.6.0`), results and
+submission history (`0.7.0`), hardening (`0.8.0`), production readiness
+(`0.9.0`) and the MVP release (`1.0.0`).
 
 ## Project structure
 
