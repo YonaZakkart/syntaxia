@@ -8,30 +8,10 @@ import {
 } from '@/components/ui/card';
 import type { ChallengeSummary } from '@/types/challenge';
 import { Code2 } from 'lucide-react';
-
-const difficultyStyles: Record<string, { label: string; className: string }> = {
-  EASY: {
-    label: 'Easy',
-    className: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300',
-  },
-  MEDIUM: {
-    label: 'Medium',
-    className: 'border-amber-300/25 bg-amber-300/10 text-amber-200',
-  },
-  HARD: {
-    label: 'Hard',
-    className: 'border-rose-400/25 bg-rose-400/10 text-rose-300',
-  },
-};
-
-const fallbackDifficulty = {
-  label: 'Unknown',
-  className: 'border-white/10 bg-white/5 text-slate-300',
-};
+import { getDifficultyMeta } from './difficulty';
 
 export function ChallengeCard({ challenge }: { challenge: ChallengeSummary }) {
-  const difficulty =
-    difficultyStyles[challenge.difficulty] ?? fallbackDifficulty;
+  const difficulty = getDifficultyMeta(challenge.difficulty);
 
   return (
     <Card className="group flex flex-col border-white/5 bg-white/[0.03] transition hover:border-brand/30 hover:bg-white/[0.05]">
