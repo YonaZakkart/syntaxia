@@ -12,6 +12,7 @@ import type {
   ExecutionRunResponse,
   ExecutionRunResult,
   ExecutionRunState,
+  SubmissionResponse,
 } from '@/types/challenge';
 import {
   AlertTriangle,
@@ -19,6 +20,7 @@ import {
   Code2,
   Loader2,
   Play,
+  Send,
   XCircle,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -80,6 +82,12 @@ export function ChallengeWorkspace({
   const [runStatus, setRunStatus] = useState<RunStatus>('idle');
   const [runState, setRunState] = useState<ExecutionRunState | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<{
+    id: string;
+    status: string;
+  } | null>(null);
   const runAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -144,7 +152,7 @@ export function ChallengeWorkspace({
   }
 
   async function handleRun() {
-    if (!code.trim() || isRunning) return;
+    if (!code.trim() || isRunning || submitting) return;
 
     setRunStatus('running');
     setRunError(null);
@@ -190,6 +198,45 @@ export function ChallengeWorkspace({
     }
   }
 
+  async function handleSubmit() {
+    if (!code.trim() || submitting || isRunning) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+    setSubmitted(null);
+
+    try {
+      const response = await authFetch('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeId: challenge.id,
+          languageId: challenge.language.id,
+          code,
+        }),
+      });
+
+      const body = (await response
+        .json()
+        .catch(() => null)) as SubmissionResponse | null;
+
+      if (!response.ok || !body?.success || !body.data?.submissionId) {
+        throw new Error(body?.error ?? 'Unable to submit the code');
+      }
+
+      setSubmitted({
+        id: body.data.submissionId,
+        status: body.data.status,
+      });
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : 'Unable to submit the code'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Card className="border-white/5 bg-white/[0.03]">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -230,7 +277,7 @@ export function ChallengeWorkspace({
 
           <Button
             className="h-9"
-            disabled={!code.trim() || isRunning}
+            disabled={!code.trim() || isRunning || submitting}
             onClick={() => {
               void handleRun();
             }}
@@ -242,6 +289,23 @@ export function ChallengeWorkspace({
               <Play aria-hidden className="size-4" />
             )}
             {isRunning ? 'Running…' : 'Run Code'}
+          </Button>
+
+          <Button
+            className="h-9"
+            disabled={!code.trim() || submitting || isRunning}
+            onClick={() => {
+              void handleSubmit();
+            }}
+            size="sm"
+            variant="outline"
+          >
+            {submitting ? (
+              <Loader2 aria-hidden className="size-4 animate-spin" />
+            ) : (
+              <Send aria-hidden className="size-4" />
+            )}
+            {submitting ? 'Submitting…' : 'Submit'}
           </Button>
         </div>
       </CardHeader>
@@ -266,9 +330,37 @@ export function ChallengeWorkspace({
         </div>
 
         <p className="text-xs text-slate-500">
-          Run Code uses the public tests only. {challenge.language.name}{' '}
-          {challenge.language.version}.
+          Run Code uses the public tests only. Submit grades every test.
         </p>
+
+        {submitError ? (
+          <div
+            className="flex items-start gap-2 rounded-lg border border-rose-400/20 bg-rose-400/5 px-3 py-2 text-sm text-rose-200"
+            role="alert"
+          >
+            <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{submitError}</span>
+          </div>
+        ) : null}
+
+        {submitted ? (
+          <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 text-sm text-slate-300">
+            <p className="flex items-center gap-2 font-medium text-brand">
+              <CheckCircle2 aria-hidden className="size-4" />
+              Submission queued
+            </p>
+            <p className="mt-1">
+              Status:{' '}
+              <span className="font-mono text-xs text-slate-200">
+                {submitted.status}
+              </span>
+              . The detailed result arrives in the submissions view (0.7.0).
+            </p>
+            <p className="mt-1 break-all font-mono text-[11px] text-slate-500">
+              {submitted.id}
+            </p>
+          </div>
+        ) : null}
 
         {runStatus === 'error' ? (
           <div

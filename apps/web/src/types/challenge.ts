@@ -102,3 +102,12 @@ export type ExecutionRunResponse = {
   data?: ExecutionRunState;
   error?: string;
 };
+
+export type SubmissionResponse = {
+  success: boolean;
+  data?: {
+    submissionId: string;
+    status: string;
+  };
+  error?: string;
+};
