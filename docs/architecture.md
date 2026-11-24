@@ -25,11 +25,12 @@ Browser ──HTTP──▶ Web (Next.js) ──HTTP──▶ API (Hono) ──S
                                              └──results────────┘
 ```
 
-The frontend is at Phase 3: landing, responsive app shell and authentication UI.
-The browser calls relative `/api/*` paths and Next.js proxies them to the API, so
-the HttpOnly refresh cookie stays same-origin. The access token is kept in
-memory and restored with the refresh cookie on reload. Challenge browsing and
-the editor are added in later phases.
+The frontend is at Phase 5: landing, responsive app shell, authentication UI,
+challenge catalog, detail view and Monaco editor with Run/Submit. The browser
+calls relative `/api/*` paths and Next.js proxies them to the API, so the
+HttpOnly refresh cookie stays same-origin. The access token is kept in memory
+and restored with the refresh cookie on reload. Submission result views arrive
+in the next phase.
 
 ## Main flows
 
@@ -76,10 +77,11 @@ test-case payloads are redacted for non-admin users.
 Components and Tailwind CSS 4. It is built with Turbopack and linted by the same
 root Biome configuration as the backend (no ESLint).
 
-Current scope (Phase 3) is the landing, the responsive app shell and the
-authentication UI. Route groups are `(auth)` for login/register and `(app)` for
-the protected challenges, submissions and profile routes. `/api/*` is rewritten
-to the API so the refresh cookie remains same-origin.
+Current scope (Phase 5) is the landing, the responsive app shell, the
+authentication UI, the challenge catalog and detail, and the Monaco editor with
+Run/Submit. Route groups are `(auth)` for login/register and `(app)` for the
+protected challenges, submissions and profile routes. `/api/*` is rewritten to
+the API so the refresh cookie remains same-origin.
 
 ### Web authentication
 
@@ -94,6 +96,19 @@ to the API so the refresh cookie remains same-origin.
    `TOKEN_EXPIRED` triggers one refresh and a retry.
 5. `ProtectedShell` redirects guests to `/login`; logout revokes the session and
    clears the cookie.
+
+### Web execution
+
+1. `Run Code` sends `{ challengeId, languageId, code }` to
+   `POST /api/executions`; the API enqueues an ephemeral run and returns a
+   `runId`.
+2. The editor polls `GET /api/executions/:runId` until the run is `FINISHED`,
+   then renders the public per-test results. Nothing is persisted.
+3. `Submit` sends the same payload to `POST /api/submissions`; the API creates a
+   submission and enqueues the grading job. The UI shows the queued id/status;
+   the persistent result view lands in `0.7.0`.
+4. Monaco is loaded client-side with `next/dynamic` (`ssr: false`) and local
+   assets from `/monaco/vs`, copied from `monaco-editor` on dev/build.
 
 Environment variables (`apps/web/.env.example`):
 
