@@ -6,6 +6,7 @@
       "**/generated/**",
       "**/.next/**",
       "**/out/**",
+      "**/public/monaco/**",
       "**/next-env.d.ts",
       "**/*.tsbuildinfo"
     ]
