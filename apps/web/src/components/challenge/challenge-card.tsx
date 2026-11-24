@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -7,7 +8,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { ChallengeSummary } from '@/types/challenge';
-import { Code2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 import { getDifficultyMeta } from './difficulty';
 
 export function ChallengeCard({ challenge }: { challenge: ChallengeSummary }) {
@@ -30,10 +32,12 @@ export function ChallengeCard({ challenge }: { challenge: ChallengeSummary }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="mt-auto">
-        <p className="flex items-center gap-2 border-t border-white/5 pt-4 text-xs text-slate-500">
-          <Code2 aria-hidden className="size-3.5" />
-          Detail view coming next
-        </p>
+        <Button asChild className="h-10 w-full justify-between" variant="ghost">
+          <Link href={`/challenges/${challenge.id}`}>
+            Open challenge
+            <ArrowRight aria-hidden className="size-4" />
+          </Link>
+        </Button>
       </CardContent>
     </Card>
   );
