@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useChallenge } from '@/hooks/use-challenge';
+import { useChallenges } from '@/hooks/use-challenges';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -18,9 +19,9 @@ import {
   FileOutput,
   type LucideIcon,
   RefreshCw,
-  Terminal,
 } from 'lucide-react';
 import Link from 'next/link';
+import { ChallengeWorkspace } from './challenge-workspace';
 import { getDifficultyMeta } from './difficulty';
 
 function formatBytes(bytes: number) {
@@ -38,6 +39,7 @@ function formatBytes(bytes: number) {
 
 export function ChallengeDetail({ challengeId }: { challengeId: string }) {
   const { challenge, status, error, reload } = useChallenge(challengeId);
+  const { challenges } = useChallenges();
 
   if (status === 'loading') return <DetailSkeleton />;
   if (status === 'not-found') return <NotFoundState />;
@@ -77,11 +79,6 @@ export function ChallengeDetail({ challengeId }: { challengeId: string }) {
               {challenge.title}
             </h1>
           </div>
-
-          <Button className="h-11 shrink-0" disabled>
-            <Terminal aria-hidden className="size-4" />
-            Open editor (next)
-          </Button>
         </div>
       </div>
 
@@ -98,19 +95,11 @@ export function ChallengeDetail({ challengeId }: { challengeId: string }) {
             </CardContent>
           </Card>
 
-          <Card className="border-white/5 bg-white/[0.03]">
-            <CardHeader>
-              <CardTitle className="text-base">Starter code</CardTitle>
-              <CardDescription>
-                Start from this template in the editor.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="overflow-x-auto rounded-xl border border-white/5 bg-[#050b1a] p-4 font-mono text-[13px] leading-6 text-slate-300">
-                <code>{challenge.starterCode}</code>
-              </pre>
-            </CardContent>
-          </Card>
+          <ChallengeWorkspace
+            challenge={challenge}
+            key={challenge.id}
+            variants={challenges}
+          />
 
           <Card className="border-white/5 bg-white/[0.03]">
             <CardHeader>
@@ -199,18 +188,6 @@ export function ChallengeDetail({ challengeId }: { challengeId: string }) {
                 <code className="font-mono text-xs text-slate-300">
                   {challenge.language.dockerImage}
                 </code>
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-dashed border-white/10 bg-transparent">
-            <CardContent className="p-5 text-sm text-slate-400">
-              <p className="font-medium text-slate-200">
-                Editor and submission
-              </p>
-              <p className="mt-1 leading-relaxed">
-                Write, run and submit code in the next branch. This page already
-                exposes the statement, starter code and public tests.
               </p>
             </CardContent>
           </Card>
