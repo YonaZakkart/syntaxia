@@ -1,6 +1,8 @@
 'use client';
 
 import { useAuth } from '@/components/auth/auth-provider';
+import { getSubmissionStatusMeta } from '@/components/submission/status';
+import { TestResultsList } from '@/components/submission/test-results';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +10,7 @@ import { cn } from '@/lib/utils';
 import type {
   ChallengeDetail,
   ChallengeSummary,
+  ChallengeTestCase,
   ExecutionResponse,
   ExecutionRunResponse,
   ExecutionRunResult,
@@ -15,7 +18,13 @@ import type {
   SubmissionResponse,
 } from '@/types/challenge';
 import {
+  type SubmissionDetail,
+  type SubmissionDetailResponse,
+  isFinalSubmissionStatus,
+} from '@/types/submission';
+import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Code2,
   Loader2,
@@ -24,6 +33,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -84,11 +94,9 @@ export function ChallengeWorkspace({
   const [runError, setRunError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<{
-    id: string;
-    status: string;
-  } | null>(null);
+  const [submitted, setSubmitted] = useState<SubmissionDetail | null>(null);
   const runAbortRef = useRef<AbortController | null>(null);
+  const submitAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setCode(challenge.starterCode);
@@ -97,6 +105,7 @@ export function ChallengeWorkspace({
   useEffect(() => {
     return () => {
       runAbortRef.current?.abort();
+      submitAbortRef.current?.abort();
     };
   }, []);
 
@@ -149,6 +158,34 @@ export function ChallengeWorkspace({
     }
 
     throw new Error('The run took too long. Try again.');
+  }
+
+  async function pollSubmission(submissionId: string, signal: AbortSignal) {
+    const deadline = Date.now() + 180_000;
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (signal.aborted) throw new Error('Cancelled');
+
+      const response = await authFetch(`/api/submissions/${submissionId}`, {
+        signal,
+      });
+      const body = (await response
+        .json()
+        .catch(() => null)) as SubmissionDetailResponse | null;
+
+      if (!response.ok || !body?.success || !body.data) {
+        throw new Error(body?.error ?? 'Unable to read the submission');
+      }
+
+      if (isFinalSubmissionStatus(body.data.status)) {
+        return body.data;
+      }
+    }
+
+    throw new Error(
+      'Grading is taking longer than expected. Check the submission history.'
+    );
   }
 
   async function handleRun() {
@@ -205,6 +242,9 @@ export function ChallengeWorkspace({
     setSubmitError(null);
     setSubmitted(null);
 
+    const controller = new AbortController();
+    submitAbortRef.current = controller;
+
     try {
       const response = await authFetch('/api/submissions', {
         method: 'POST',
@@ -214,6 +254,7 @@ export function ChallengeWorkspace({
           languageId: challenge.language.id,
           code,
         }),
+        signal: controller.signal,
       });
 
       const body = (await response
@@ -224,15 +265,21 @@ export function ChallengeWorkspace({
         throw new Error(body?.error ?? 'Unable to submit the code');
       }
 
-      setSubmitted({
-        id: body.data.submissionId,
-        status: body.data.status,
-      });
+      const detail = await pollSubmission(
+        body.data.submissionId,
+        controller.signal
+      );
+      if (controller.signal.aborted) return;
+
+      setSubmitted(detail);
     } catch (error) {
+      if (controller.signal.aborted) return;
+
       setSubmitError(
         error instanceof Error ? error.message : 'Unable to submit the code'
       );
     } finally {
+      submitAbortRef.current = null;
       setSubmitting(false);
     }
   }
@@ -305,7 +352,7 @@ export function ChallengeWorkspace({
             ) : (
               <Send aria-hidden className="size-4" />
             )}
-            {submitting ? 'Submitting…' : 'Submit'}
+            {submitting ? 'Grading…' : 'Submit'}
           </Button>
         </div>
       </CardHeader>
@@ -344,22 +391,10 @@ export function ChallengeWorkspace({
         ) : null}
 
         {submitted ? (
-          <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 text-sm text-slate-300">
-            <p className="flex items-center gap-2 font-medium text-brand">
-              <CheckCircle2 aria-hidden className="size-4" />
-              Submission queued
-            </p>
-            <p className="mt-1">
-              Status:{' '}
-              <span className="font-mono text-xs text-slate-200">
-                {submitted.status}
-              </span>
-              . The detailed result arrives in the submissions view (0.7.0).
-            </p>
-            <p className="mt-1 break-all font-mono text-[11px] text-slate-500">
-              {submitted.id}
-            </p>
-          </div>
+          <SubmissionResultPanel
+            submission={submitted}
+            testCases={challenge.testCases}
+          />
         ) : null}
 
         {runStatus === 'error' ? (
@@ -373,7 +408,10 @@ export function ChallengeWorkspace({
         ) : null}
 
         {runStatus === 'finished' && runState?.result ? (
-          <RunResultPanel result={runState.result} />
+          <RunResultPanel
+            result={runState.result}
+            testCases={challenge.testCases}
+          />
         ) : null}
 
         {runStatus === 'finished' && !runState?.result ? (
@@ -386,11 +424,21 @@ export function ChallengeWorkspace({
   );
 }
 
-function RunResultPanel({ result }: { result: ExecutionRunResult }) {
+function RunResultPanel({
+  result,
+  testCases,
+}: {
+  result: ExecutionRunResult;
+  testCases: ChallengeTestCase[];
+}) {
   const passed = result.finalStatus === 'PASSED';
+  const inputs = new Map(
+    testCases.map((testCase) => [testCase.id, testCase.input])
+  );
 
   return (
     <div
+      aria-live="polite"
       className={cn(
         'rounded-xl border p-4',
         passed
@@ -422,42 +470,104 @@ function RunResultPanel({ result }: { result: ExecutionRunResult }) {
         <p className="mt-2 text-xs text-rose-200">{result.errorMessage}</p>
       ) : null}
 
-      <ul className="mt-3 space-y-2">
-        {result.testResults.map((test, index) => (
-          <li
-            className="rounded-lg border border-white/5 bg-[#050b1a] p-3"
-            key={test.testCaseId}
-          >
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span
-                className={test.passed ? 'text-emerald-300' : 'text-rose-300'}
-              >
-                {test.passed ? 'Passed' : 'Failed'} · Case {index + 1}
-              </span>
-              <span className="font-mono text-slate-500">
-                {test.duration} ms
-              </span>
-            </div>
+      <div className="mt-3">
+        <TestResultsList
+          results={result.testResults.map((test) => ({
+            id: test.testCaseId,
+            passed: test.passed,
+            duration: test.duration,
+            input: inputs.get(test.testCaseId),
+            expectedOutput: test.expectedOutput,
+            actualOutput: test.actualOutput,
+            error: test.error,
+          }))}
+        />
+      </div>
+    </div>
+  );
+}
 
-            {!test.passed ? (
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <div>
-                  <p className="text-[11px] text-slate-500">Expected</p>
-                  <pre className="mt-1 overflow-x-auto font-mono text-xs leading-5 text-slate-300">
-                    {test.expectedOutput}
-                  </pre>
-                </div>
-                <div>
-                  <p className="text-[11px] text-slate-500">Actual</p>
-                  <pre className="mt-1 overflow-x-auto font-mono text-xs leading-5 text-rose-200">
-                    {test.actualOutput || test.error || '(empty)'}
-                  </pre>
-                </div>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+function SubmissionResultPanel({
+  submission,
+  testCases,
+}: {
+  submission: SubmissionDetail;
+  testCases: ChallengeTestCase[];
+}) {
+  const passed = submission.status === 'PASSED';
+  const statusMeta = getSubmissionStatusMeta(submission.status);
+  const execution = submission.execution;
+  const inputs = new Map(
+    testCases.map((testCase) => [testCase.id, testCase.input])
+  );
+  const results = execution
+    ? (Array.isArray(execution.testResults) ? execution.testResults : []).map(
+        (test, index) => ({
+          id: test.testCaseId ?? `test-${index}`,
+          passed: test.passed ?? false,
+          duration: test.duration,
+          input: test.input ?? inputs.get(test.testCaseId ?? ''),
+          expectedOutput: test.expectedOutput,
+          actualOutput: test.actualOutput,
+          error: test.error,
+          hidden: test.hidden,
+        })
+      )
+    : [];
+
+  return (
+    <div
+      aria-live="polite"
+      className={cn(
+        'rounded-xl border p-4',
+        passed
+          ? 'border-emerald-400/20 bg-emerald-400/5'
+          : 'border-rose-400/20 bg-rose-400/5'
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p
+          className={cn(
+            'flex items-center gap-2 text-sm font-medium',
+            passed ? 'text-emerald-300' : 'text-rose-300'
+          )}
+        >
+          {passed ? (
+            <CheckCircle2 aria-hidden className="size-4" />
+          ) : (
+            <XCircle aria-hidden className="size-4" />
+          )}
+          {statusMeta.label}
+        </p>
+        {execution ? (
+          <p className="font-mono text-xs text-slate-400">
+            {execution.testsPassed}/{execution.testsTotal} tests ·{' '}
+            {execution.totalDurationMs} ms
+          </p>
+        ) : null}
+      </div>
+
+      {execution?.errorMessage ? (
+        <p className="mt-2 text-xs text-rose-200">{execution.errorMessage}</p>
+      ) : null}
+
+      {results.length > 0 ? (
+        <div className="mt-3">
+          <TestResultsList results={results} />
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="break-all font-mono text-[11px] text-slate-500">
+          {submission.id}
+        </span>
+        <Button asChild className="h-8" size="sm" variant="outline">
+          <Link href={`/submissions/${submission.id}`}>
+            View details
+            <ArrowRight aria-hidden className="size-3.5" />
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
