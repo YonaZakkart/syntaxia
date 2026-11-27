@@ -74,5 +74,7 @@ jobs:
         run: pnpm db:generate
       - name: Push database schema
         run: pnpm db:push
+      - name: Build TypeScript sandbox image
+        run: docker build -f docker/typescript.Dockerfile -t syntaxia/typescript-runner docker/
       - name: Run tests
         run: pnpm test
