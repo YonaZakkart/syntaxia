@@ -8,9 +8,6 @@ import type { AppEnv } from '../types';
 
 const app = new Hono<AppEnv>();
 
-// Apply rate limiting to all submission routes
-app.use('*', submissionRateLimit);
-
 // Zod 4's .uuid() enforces RFC version/variant nibbles, but existing
 // challenge and language ids in the database are not canonical UUIDs.
 // Accept any UUID-shaped id so legacy records stay usable.
@@ -178,7 +175,7 @@ app.get('/:id', authMiddleware, async (c) => {
   }
 });
 
-app.post('/', authMiddleware, async (c) => {
+app.post('/', submissionRateLimit, authMiddleware, async (c) => {
   try {
     const user = c.get('user'); // Typed through the Env generic above
     if (!user) {
