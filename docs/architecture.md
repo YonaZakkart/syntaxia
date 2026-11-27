@@ -25,12 +25,12 @@ Browser ──HTTP──▶ Web (Next.js) ──HTTP──▶ API (Hono) ──S
                                              └──results────────┘
 ```
 
-The frontend is at Phase 5: landing, responsive app shell, authentication UI,
-challenge catalog, detail view and Monaco editor with Run/Submit. The browser
+The frontend is at Phase 7: landing, responsive app shell, authentication UI,
+challenge catalog, detail view, Monaco editor with Run/Submit, and the
+submission history with per-test result views and detail timeline. The browser
 calls relative `/api/*` paths and Next.js proxies them to the API, so the
 HttpOnly refresh cookie stays same-origin. The access token is kept in memory
-and restored with the refresh cookie on reload. Submission result views arrive
-in the next phase.
+and restored with the refresh cookie on reload.
 
 ## Main flows
 
@@ -77,11 +77,12 @@ test-case payloads are redacted for non-admin users.
 Components and Tailwind CSS 4. It is built with Turbopack and linted by the same
 root Biome configuration as the backend (no ESLint).
 
-Current scope (Phase 5) is the landing, the responsive app shell, the
-authentication UI, the challenge catalog and detail, and the Monaco editor with
-Run/Submit. Route groups are `(auth)` for login/register and `(app)` for the
-protected challenges, submissions and profile routes. `/api/*` is rewritten to
-the API so the refresh cookie remains same-origin.
+Current scope (Phase 7) is the landing, the responsive app shell, the
+authentication UI, the challenge catalog and detail, the Monaco editor with
+Run/Submit, and the submission history and detail views. Route groups are
+`(auth)` for login/register and `(app)` for the protected challenges,
+submissions and profile routes. `/api/*` is rewritten to the API so the
+refresh cookie remains same-origin.
 
 ### Web authentication
 
@@ -105,10 +106,27 @@ the API so the refresh cookie remains same-origin.
 2. The editor polls `GET /api/executions/:runId` until the run is `FINISHED`,
    then renders the public per-test results. Nothing is persisted.
 3. `Submit` sends the same payload to `POST /api/submissions`; the API creates a
-   submission and enqueues the grading job. The UI shows the queued id/status;
-   the persistent result view lands in `0.7.0`.
+   submission and enqueues the grading job. The editor polls
+   `GET /api/submissions/:id` every two seconds until the status is final and
+   renders the persisted per-test results, with a link to the full detail.
 4. Monaco is loaded client-side with `next/dynamic` (`ssr: false`) and local
    assets from `/monaco/vs`, copied from `monaco-editor` on dev/build.
+
+### Web submission history
+
+1. `/submissions` calls `GET /api/submissions?limit=&offset=&status=&challengeId=`
+   and renders the current user's submissions with status, challenge, language,
+   test counters, duration, filters and pagination.
+2. `/submissions/:id` calls `GET /api/submissions/:id` and shows the result
+   summary, expandable per-test details, the submitted code and a timeline.
+   While the status is `QUEUED` or `RUNNING`, the hook refreshes the record
+   until it becomes final (capped at three minutes).
+3. Failed public tests expand to input, expected output, actual output and a
+   line diff. The API attaches the input of public test cases to the stored
+   result; hidden test cases arrive redacted (`hidden: true`) with only the
+   pass/fail flag, duration and error, never their input or output.
+4. Ephemeral `Run Code` results stay in memory and never appear in this
+   history.
 
 Environment variables (`apps/web/.env.example`):
 
@@ -161,7 +179,7 @@ code never reaches a shell as an argument.
 | `GET` | `/api/challenges` | No | List challenges |
 | `GET` | `/api/challenges/:id` | No | Challenge detail (public tests only) |
 | `POST` | `/api/submissions` | Bearer | Submit code for grading |
-| `GET` | `/api/submissions` | Bearer | Current user's submission history |
+| `GET` | `/api/submissions` | Bearer | Current user's history (filters: `status`, `challengeId`) |
 | `GET` | `/api/submissions/:id` | Bearer | Submission detail + test results |
 | `POST` | `/api/executions` | Bearer | Run code against public tests |
 | `GET` | `/api/executions/:runId` | Bearer | Poll an ephemeral run |

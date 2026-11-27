@@ -1,6 +1,6 @@
 # Syntaxia
 
-**Current version**: `0.6.0` — backend complete, frontend catalog and editor.
+**Current version**: `0.7.0` — backend complete, frontend through submission history.
 
 AI-powered coding practice platform and online judge. Solve challenges in the
 browser, run code against public tests, and submit solutions for grading in an
@@ -15,7 +15,7 @@ isolated Docker sandbox.
 - Responsive app shell with protected routes and session refresh
 - Challenge catalog, detail view and Monaco editor
 - Run Code against public tests and submit for full grading
-- Submission history with per-test results
+- Submission history with per-test results, filters and detail timeline
 - Seed data for languages and challenges (idempotent)
 
 ## Tech stack
@@ -91,7 +91,7 @@ Base URL: `http://localhost:3001`
 | `GET` | `/api/challenges` | List challenges |
 | `GET` | `/api/challenges/:id` | Challenge detail (public test cases only) |
 | `POST` | `/api/submissions` | Submit code for grading |
-| `GET` | `/api/submissions` | Current user's submission history |
+| `GET` | `/api/submissions` | Current user's submission history (filter by `status` and `challengeId`) |
 | `GET` | `/api/submissions/:id` | Submission detail with test results |
 | `POST` | `/api/executions` | Run code against public tests (ephemeral) |
 | `GET` | `/api/executions/:runId` | Poll an ephemeral run |
@@ -113,10 +113,10 @@ limits, sandbox isolation, the data model and operational notes.
 
 ## Frontend
 
-`apps/web` is at **Phase 5**: Next.js App Router, strict TypeScript, Tailwind
+`apps/web` is at **Phase 7**: Next.js App Router, strict TypeScript, Tailwind
 CSS, the public landing page, a responsive app shell, the login/register
-flow, the challenge catalog, the detail view and the Monaco editor with Run/Submit. Submission result views arrive in the
-following versions.
+flow, the challenge catalog, the detail view, the Monaco editor with
+Run/Submit, and the submission history and detail views.
 
 The browser calls relative `/api/*` paths; Next.js proxies them to the API so
 the HttpOnly refresh cookie stays same-origin. Set `API_URL` for the proxy and
@@ -130,11 +130,10 @@ the refresh cookie on reload.
 |------|-------|
 | API, auth, queue, worker, sandbox | Complete |
 | Challenge and submission endpoints | Complete |
-| Frontend | Phase 5 (catalog + detail + editor) |
+| Frontend | Phase 7 (catalog + detail + editor + history) |
 | MVP target | `1.0.0` |
 
-The next milestones are persistent results and submission history (`0.7.0`),
-hardening (`0.8.0`), production readiness
+The next milestones are hardening (`0.8.0`), production readiness
 (`0.9.0`) and the MVP release (`1.0.0`).
 
 ## Project structure
