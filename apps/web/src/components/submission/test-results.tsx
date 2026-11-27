@@ -138,6 +138,8 @@ function diffLines(expected: string, actual: string): DiffLine[] {
   return lines;
 }
 
+const MAX_DIFF_LINES = 400;
+
 function LineDiff({
   expected,
   actual,
@@ -145,6 +147,18 @@ function LineDiff({
   expected: string;
   actual: string;
 }) {
+  const tooLarge =
+    expected.split('\n').length > MAX_DIFF_LINES ||
+    actual.split('\n').length > MAX_DIFF_LINES;
+
+  if (tooLarge) {
+    return (
+      <p className="mt-1 text-xs text-slate-500">
+        Diff omitted for outputs longer than {MAX_DIFF_LINES} lines.
+      </p>
+    );
+  }
+
   const lines = diffLines(expected, actual);
 
   return (
