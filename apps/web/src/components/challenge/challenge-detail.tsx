@@ -17,6 +17,7 @@ import {
   Clock,
   Cpu,
   FileOutput,
+  ListChecks,
   type LucideIcon,
   RefreshCw,
 } from 'lucide-react';
@@ -79,6 +80,13 @@ export function ChallengeDetail({ challengeId }: { challengeId: string }) {
               {challenge.title}
             </h1>
           </div>
+
+          <Button asChild className="h-10 shrink-0" size="sm" variant="outline">
+            <Link href={`/submissions?challengeId=${challenge.id}`}>
+              <ListChecks aria-hidden className="size-4" />
+              My submissions
+            </Link>
+          </Button>
         </div>
       </div>
 
