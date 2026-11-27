@@ -167,6 +167,22 @@ Each run gets a dedicated container with:
 Source files and stdin are written through tar archives (`putArchive`), so user
 code never reaches a shell as an argument.
 
+### Adversarial verification
+
+The worker suite runs the real sandbox for output flooding, timeouts, host
+filesystem access and network isolation. A manual runner covers the riskier
+cases (fork bomb, memory exhaustion, privilege escalation):
+
+```bash
+ALLOW_ADVERSARIAL_SANDBOX=1 pnpm --filter @syntaxia/worker test:adversarial
+```
+
+Observed results: fork bomb → `TIME_LIMIT_EXCEEDED` after hitting `PidsLimit`;
+memory exhaustion → OOM kill (exit 137) → `MEMORY_LIMIT_EXCEEDED`; `setuid(0)` →
+`PermissionError`; a host-only file → `FileNotFoundError`; TCP and DNS →
+unreachable. The container is always stopped and removed, and the host stays
+stable.
+
 ## API overview
 
 | Method | Path | Auth | Description |
