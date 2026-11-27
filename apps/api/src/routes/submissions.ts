@@ -1,4 +1,4 @@
-import { prisma } from '@syntaxia/db';
+import { type Prisma, prisma } from '@syntaxia/db';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { executionQueue } from '../lib/queue';
@@ -30,11 +30,26 @@ const submissionSchema = z.object({
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
+  status: z
+    .enum([
+      'QUEUED',
+      'RUNNING',
+      'PASSED',
+      'WRONG_ANSWER',
+      'TIME_LIMIT_EXCEEDED',
+      'MEMORY_LIMIT_EXCEEDED',
+      'RUNTIME_ERROR',
+      'COMPILATION_ERROR',
+      'SYSTEM_ERROR',
+    ])
+    .optional(),
+  challengeId: idSchema.optional(),
 });
 
 interface StoredTestResult {
   testCaseId?: string;
   passed?: boolean;
+  input?: string;
   expectedOutput?: string;
   actualOutput?: string;
   error?: string;
@@ -42,12 +57,14 @@ interface StoredTestResult {
 }
 
 /**
- * Hidden test cases must not leak their expected/actual output through the
- * submission detail endpoint. Keep the failure metadata, drop the payloads.
+ * Hidden test cases must not leak their input or output through the
+ * submission detail endpoint. Public tests get their input attached so the
+ * UI can show the failing case without a second request.
  */
-function redactTestResults(
+function shapeTestResults(
   testResults: unknown,
-  publicTestCaseIds: Set<string>
+  publicInputs: Map<string, string>,
+  includeHiddenPayloads: boolean
 ): unknown {
   if (!Array.isArray(testResults)) {
     return testResults;
@@ -55,9 +72,14 @@ function redactTestResults(
 
   return testResults.map((raw) => {
     const result = raw as StoredTestResult;
-    const isHidden = !publicTestCaseIds.has(result.testCaseId ?? '');
+    const testCaseId = result.testCaseId ?? '';
+    const input = publicInputs.get(testCaseId);
 
-    if (!isHidden) {
+    if (input !== undefined) {
+      return { ...result, input };
+    }
+
+    if (includeHiddenPayloads) {
       return result;
     }
 
@@ -87,8 +109,11 @@ app.get('/', authMiddleware, async (c) => {
       );
     }
 
-    const { limit, offset } = parsed.data;
-    const where = { userId: user.userId };
+    const { limit, offset, status, challengeId } = parsed.data;
+    const where: Prisma.SubmissionWhereInput = { userId: user.userId };
+
+    if (status) where.status = status;
+    if (challengeId) where.challengeId = challengeId;
 
     const [items, total] = await prisma.$transaction([
       prisma.submission.findMany({
@@ -150,21 +175,21 @@ app.get('/:id', authMiddleware, async (c) => {
     if (execution) {
       const testCases = await prisma.testCase.findMany({
         where: { challengeId: submission.challengeId },
-        select: { id: true, isPublic: true },
+        select: { id: true, isPublic: true, input: true },
       });
-      const publicIds = new Set(
-        testCases.filter((testCase) => testCase.isPublic).map((tc) => tc.id)
+      const publicInputs = new Map(
+        testCases
+          .filter((testCase) => testCase.isPublic)
+          .map((testCase) => [testCase.id, testCase.input])
       );
 
       execution = {
         ...execution,
-        testResults:
+        testResults: shapeTestResults(
+          execution.testResults,
+          publicInputs,
           user.role === 'ADMIN'
-            ? execution.testResults
-            : (redactTestResults(
-                execution.testResults,
-                publicIds
-              ) as typeof execution.testResults),
+        ) as typeof execution.testResults,
       };
     }
 
