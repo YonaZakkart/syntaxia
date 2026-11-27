@@ -23,13 +23,13 @@ export interface ExecutionResult {
   outputTruncated?: boolean;
 }
 
-interface LanguageConfig {
+export interface LanguageConfig {
   fileName: string;
   compileCommand?: string;
   runCommand: string; // full command, source path already included when needed
 }
 
-const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
+export const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
   python: {
     fileName: 'solution.py',
     runCommand: 'python3 /tmp/solution.py',
