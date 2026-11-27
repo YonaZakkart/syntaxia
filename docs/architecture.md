@@ -138,6 +138,25 @@ Environment variables (`apps/web/.env.example`):
 
 `pnpm dev` starts the web app on `:3000`, the API on `:3001` and the worker.
 
+## Languages
+
+| Language | Image |
+|----------|-------|
+| Python | `python:3.11-slim` |
+| JavaScript | `node:18-alpine` |
+| TypeScript | `syntaxia/typescript-runner` (local image with `tsx`) |
+| C++ | `gcc:11` |
+| Java | `eclipse-temurin:21-jdk` |
+
+TypeScript uses a local image so the sandbox can stay offline. Build it once:
+
+```bash
+docker build -f docker/typescript.Dockerfile -t syntaxia/typescript-runner docker/
+```
+
+`tsx` transpiles without type-checking: syntax errors surface as runtime
+failures, while type errors are not rejected before execution.
+
 ## Execution limits
 
 Limits are resolved as **challenge override > language default > global

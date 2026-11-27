@@ -9,6 +9,7 @@ isolated Docker sandbox.
 ## Features
 
 - Coding challenges with an integrated online judge
+- TypeScript, JavaScript, Python, C++ and Java execution in the sandbox
 - Secure code execution sandbox (Docker, no network, resource limits)
 - "Run Code" against public test cases without polluting submission history
 - JWT authentication with rotating refresh tokens
@@ -40,20 +41,23 @@ isolated Docker sandbox.
 # 1. Install dependencies
 pnpm install
 
-# 2. Configure the environment
+# 2. Build the TypeScript sandbox image (required for TypeScript challenges)
+docker build -f docker/typescript.Dockerfile -t syntaxia/typescript-runner docker/
+
+# 3. Configure the environment
 cp .env.example .env
 cp apps/web/.env.example apps/web/.env.local
 # Edit .env and set a real JWT_SECRET:
 #   openssl rand -base64 64
 
-# 3. Start PostgreSQL (:5433) and Redis (:6379)
+# 4. Start PostgreSQL (:5433) and Redis (:6379)
 pnpm dev:infra
 
-# 4. Create the schema and load seed data
+# 5. Create the schema and load seed data
 pnpm db:push
 pnpm db:seed
 
-# 5. Run the frontend (http://localhost:3000), API (http://localhost:3001)
+# 6. Run the frontend (http://localhost:3000), API (http://localhost:3001)
 #    and the execution worker
 pnpm dev
 ```
