@@ -195,7 +195,8 @@ Rate limiting uses Redis and returns `429` with `Retry-After` headers:
 | Register | 5 / 15 min |
 | Login | 10 / 15 min |
 | Refresh | 5 / 15 min |
-| Submissions | 30 / min |
+| Submit (`POST /api/submissions`) | 30 / min |
+| History / detail (`GET /api/submissions*`) | Global bucket (100 / min) |
 | Run Code | 30 / min per user (shared bucket with submissions) |
 
 ## Data model
