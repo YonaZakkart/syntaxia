@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getDifficultyMeta } from '../challenge/difficulty';
 import { getSubmissionStatusMeta } from './status';
 
@@ -55,6 +55,11 @@ export function SubmissionsHistory({
       status: statusFilter === 'ALL' ? undefined : statusFilter,
       challengeId: challengeFilter === 'ALL' ? undefined : challengeFilter,
     });
+
+  useEffect(() => {
+    setChallengeFilter(initialChallengeId ?? 'ALL');
+    setPage(0);
+  }, [initialChallengeId, setPage]);
 
   const hasFilters = statusFilter !== 'ALL' || challengeFilter !== 'ALL';
 
