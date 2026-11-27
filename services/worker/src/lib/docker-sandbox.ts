@@ -38,6 +38,10 @@ export const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
     fileName: 'solution.js',
     runCommand: 'node /tmp/solution.js',
   },
+  typescript: {
+    fileName: 'solution.ts',
+    runCommand: 'tsx /tmp/solution.ts',
+  },
   cpp: {
     fileName: 'solution.cpp',
     compileCommand: 'g++ -O2 /tmp/solution.cpp -o /tmp/solution',
@@ -59,12 +63,13 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   node: 'javascript',
   nodejs: 'javascript',
   'node.js': 'javascript',
+  ts: 'typescript',
   'c++': 'cpp',
   cplusplus: 'cpp',
   cxx: 'cpp',
 };
 
-function getLanguageConfig(languageName: string): LanguageConfig {
+export function getLanguageConfig(languageName: string): LanguageConfig {
   const normalized = languageName.trim().toLowerCase();
   const key = LANGUAGE_ALIASES[normalized] ?? normalized;
   const config = LANGUAGE_CONFIGS[key];
@@ -103,6 +108,11 @@ async function writeFileToContainer(
   await container.putArchive(tarBuffer, { path: '/tmp' });
 }
 
+const LOCAL_IMAGE_BUILD_HINTS: Record<string, string> = {
+  'syntaxia/typescript-runner':
+    'docker build -f docker/typescript.Dockerfile -t syntaxia/typescript-runner docker/',
+};
+
 async function ensureImageExists(imageName: string): Promise<void> {
   try {
     await docker.getImage(imageName).inspect();
@@ -111,6 +121,14 @@ async function ensureImageExists(imageName: string): Promise<void> {
     if (statusCode !== 404) {
       throw error;
     }
+
+    if (imageName.startsWith('syntaxia/')) {
+      const hint = LOCAL_IMAGE_BUILD_HINTS[imageName];
+      throw new Error(
+        `Local image ${imageName} is missing.${hint ? ` Build it with: ${hint}` : ' Build it before running submissions.'}`
+      );
+    }
+
     console.log(`[sandbox] Pulling image ${imageName}...`);
     const stream = await docker.pull(imageName);
     await new Promise<void>((resolve, reject) => {
