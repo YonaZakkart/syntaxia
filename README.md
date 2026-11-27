@@ -153,6 +153,8 @@ docs/              Public documentation
   use. Reuse revokes all sessions for that user.
 - User code runs in disposable containers with no network, a non-root user,
   dropped capabilities and time/memory/output limits.
+- The sandbox is verified against fork bombs, memory exhaustion, host
+  filesystem access, network isolation and compile-time abuse.
 - Set `NODE_ENV=production` behind TLS so the refresh cookie is sent as
   `Secure`.
 

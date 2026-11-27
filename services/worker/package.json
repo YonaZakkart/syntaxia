@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "node --import tsx --test src/lib/test-runner.test.ts src/lib/limits.test.ts"
+    "test": "node --import tsx --test src/lib/test-runner.test.ts src/lib/limits.test.ts src/lib/sandbox-hardening.test.ts",
+    "test:adversarial": "node --import tsx scripts/sandbox-adversarial.ts"
   },
   "dependencies": {
     "@syntaxia/db": "workspace:*",
