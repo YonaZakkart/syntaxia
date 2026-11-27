@@ -12,7 +12,7 @@ const languages = [
   {
     name: 'TypeScript',
     version: '5.x',
-    dockerImage: 'node:18-alpine',
+    dockerImage: 'syntaxia/typescript-runner',
     defaultTimeLimitMs: 5000,
     defaultMemoryLimitMb: 256,
     defaultOutputLimitBytes: 1048576,
@@ -182,6 +182,32 @@ Hello, World!
 console.log("Hello, World!");`,
       Python: `# Your code here
 print("Hello, World!")`,
+      TypeScript: `// Your code here
+console.log("Hello, World!");`,
+    },
+    testCases: [
+      { input: '{}', expectedOutput: 'Hello, World!', isPublic: true },
+      { input: '{}', expectedOutput: 'Hello, World!', isPublic: false },
+    ],
+  },
+  {
+    title: 'Hello World',
+    description: `Write a program that prints "Hello, World!" to standard output.
+
+This is the classic first program for beginners. Your program should output exactly:
+\`\`\`
+Hello, World!
+\`\`\`
+
+**Constraints:**
+- No input
+- Output must match exactly (including capitalization and punctuation)`,
+    difficulty: 'EASY',
+    languageName: 'TypeScript',
+    timeLimitMs: 1000,
+    memoryLimitMb: 64,
+    outputLimitBytes: 1048576,
+    starterCodeMap: {
       TypeScript: `// Your code here
 console.log("Hello, World!");`,
     },
