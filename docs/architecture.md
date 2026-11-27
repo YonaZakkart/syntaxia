@@ -171,17 +171,20 @@ code never reaches a shell as an argument.
 
 The worker suite runs the real sandbox for output flooding, timeouts, host
 filesystem access and network isolation. A manual runner covers the riskier
-cases (fork bomb, memory exhaustion, privilege escalation):
+cases (fork bomb, memory exhaustion, privilege escalation and compile-time
+abuse):
 
 ```bash
 ALLOW_ADVERSARIAL_SANDBOX=1 pnpm --filter @syntaxia/worker test:adversarial
+# Optional: CPP_IMAGE=<local g++ image> (defaults to gcc:11; C++ cases skip if missing)
 ```
 
 Observed results: fork bomb → `TIME_LIMIT_EXCEEDED` after hitting `PidsLimit`;
 memory exhaustion → OOM kill (exit 137) → `MEMORY_LIMIT_EXCEEDED`; `setuid(0)` →
 `PermissionError`; a host-only file → `FileNotFoundError`; TCP and DNS →
-unreachable. The container is always stopped and removed, and the host stays
-stable.
+unreachable; a host-only `#include` → compilation error; an expensive but valid
+compile → cut at the 10-second compile timeout. The container is always stopped
+and removed, and the host stays stable.
 
 ## API overview
 

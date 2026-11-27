@@ -154,7 +154,7 @@ docs/              Public documentation
 - User code runs in disposable containers with no network, a non-root user,
   dropped capabilities and time/memory/output limits.
 - The sandbox is verified against fork bombs, memory exhaustion, host
-  filesystem access and network isolation.
+  filesystem access, network isolation and compile-time abuse.
 - Set `NODE_ENV=production` behind TLS so the refresh cookie is sent as
   `Secure`.
 
